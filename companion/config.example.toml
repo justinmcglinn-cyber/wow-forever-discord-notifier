@@ -1,0 +1,39 @@
+# Copy this file to config.toml and fill in the two settings marked REQUIRED.
+
+# REQUIRED: Discord webhook (Server Settings → Integrations → Webhooks → New Webhook → Copy URL).
+# Keep it private: anyone with this URL can post to your channel.
+webhook_url = ""
+
+# REQUIRED: your WoW Forever install folder, the one containing the Screenshots and WTF folders.
+# Use single quotes so backslashes are kept as-is.
+wow_dir = 'C:\Program Files (x86)\World of Warcraft\_forever_'
+
+# Optional overrides if your folders live elsewhere:
+# screenshots_dir = 'D:\WoW\_forever_\Screenshots'
+# saved_variables_glob = 'D:\WoW\_forever_\WTF\Account\*\SavedVariables\ForeverNotify.lua'
+
+# Delete the add-on's signal screenshots after reading them. Your own screenshots are never touched.
+delete_signal_screenshots = true
+
+# After logout, wait this long before posting the gold summary, in case it was a /reload.
+summary_grace_seconds = 30
+
+# How often to check for new screenshots (seconds).
+poll_seconds = 0.5
+
+[notify]
+death = true
+level = true
+pvp = true
+flag = true      # only sent if also enabled in game with /fnotify flag
+summary = true
+test = true
+
+[mentions]
+# Added to PvP alerts so your phone pings loudly, e.g. "<@123456789012345678>" (your Discord user ID).
+pvp = ""
+
+[webhooks]
+# Optional per-event webhooks (e.g. a separate #pvp channel). Unlisted events use webhook_url.
+# pvp = "https://discord.com/api/webhooks/..."
+# summary = "https://discord.com/api/webhooks/..."

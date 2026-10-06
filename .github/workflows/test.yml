@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Lua 5.1 and Pillow
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+          pip install -r companion/requirements.txt
+      - name: Syntax-check add-on
+        run: for f in addon/ForeverNotify/*.lua; do luac5.1 -p "$f"; done
+      - name: Add-on scenario (Lua 5.1 with stubbed WoW API)
+        run: mkdir -p /tmp/out && lua5.1 tests/lua/run_scenario.lua addon/ForeverNotify /tmp/out
+      - name: Companion tests
+        working-directory: companion
+        run: python -m unittest discover -s tests -t . -v

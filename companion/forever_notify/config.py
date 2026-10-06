@@ -1,0 +1,70 @@
+"""Load and validate the companion's TOML config."""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+EVENTS = ("death", "level", "pvp", "flag", "summary", "test")
+SIGNAL_EVENTS = {"DEATH": "death", "LEVEL": "level", "PVP": "pvp", "FLAG": "flag", "TEST": "test"}
+
+
+class ConfigError(ValueError):
+    pass
+
+
+@dataclass
+class Config:
+    webhook_url: str
+    screenshots_dir: Path
+    saved_variables_glob: str
+    delete_signal_screenshots: bool = True
+    summary_grace_seconds: float = 30
+    poll_seconds: float = 0.5
+    notify: dict[str, bool] = field(default_factory=lambda: {e: True for e in EVENTS})
+    webhooks: dict[str, str] = field(default_factory=dict)
+    pvp_mention: str = ""
+
+    def webhook_for(self, event: str) -> str:
+        return self.webhooks.get(event) or self.webhook_url
+
+    def enabled(self, event: str) -> bool:
+        return self.notify.get(event, True)
+
+
+def load(path: str | Path) -> Config:
+    path = Path(path)
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ConfigError(f"Config file not found: {path} (copy config.example.toml to get started)")
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path}: {e}")
+
+    webhook = raw.get("webhook_url", "").strip()
+    if not webhook.startswith("https://"):
+        raise ConfigError("webhook_url must be set to your Discord webhook URL (https://discord.com/api/webhooks/...)")
+
+    wow_dir = raw.get("wow_dir")
+    screenshots = raw.get("screenshots_dir") or (wow_dir and str(Path(wow_dir) / "Screenshots"))
+    sv_glob = raw.get("saved_variables_glob") or (
+        wow_dir and str(Path(wow_dir) / "WTF" / "Account" / "*" / "SavedVariables" / "ForeverNotify.lua"))
+    if not screenshots or not sv_glob:
+        raise ConfigError("Set wow_dir to your WoW Forever install folder (the one containing Screenshots and WTF)")
+
+    notify = {e: True for e in EVENTS}
+    notify.update({k: bool(v) for k, v in raw.get("notify", {}).items()})
+    webhooks = {k: v for k, v in raw.get("webhooks", {}).items() if v}
+
+    return Config(
+        webhook_url=webhook,
+        screenshots_dir=Path(screenshots),
+        saved_variables_glob=sv_glob,
+        delete_signal_screenshots=bool(raw.get("delete_signal_screenshots", True)),
+        summary_grace_seconds=float(raw.get("summary_grace_seconds", 30)),
+        poll_seconds=float(raw.get("poll_seconds", 0.5)),
+        notify=notify,
+        webhooks=webhooks,
+        pvp_mention=raw.get("mentions", {}).get("pvp", ""),
+    )
