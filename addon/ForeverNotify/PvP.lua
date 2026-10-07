@@ -13,6 +13,7 @@ ns.PvP = PvP
 local ATTACKER_TTL = 10     -- seconds an attacker counts as "active"
 local REPORT_AGAIN = 120    -- seconds before the same attacker triggers a new alert
 local KILLER_WINDOW = 20    -- seconds before death within which an attacker counts as the killer
+local NPC_KILLER_WINDOW = 10
 local MAX_LISTED = 3
 
 local attackers = {}        -- name -> { summary, lastSeen, source }
@@ -35,6 +36,14 @@ local function IsHostilePlayer(unit)
   return (ns.call(UnitCanAttack, "player", unit) or ns.call(UnitIsEnemy, "player", unit)) and true or false
 end
 
+local function IsHostileNPC(unit)
+  if not ns.call(UnitExists, unit) or ns.call(UnitIsPlayer, unit) then return false end
+  return ns.call(UnitCanAttack, "player", unit) and true or false
+end
+
+-- Records hostile players (and, for naming killers without the combat log,
+-- hostile NPCs) that are targeting you. Returns the number of hostile players
+-- with visible nameplates.
 local function ScanUnits()
   local units = { "target", "focus", "mouseover", "softenemy" }
   for i = 1, 40 do units[#units + 1] = "nameplate" .. i end
@@ -47,10 +56,14 @@ local function ScanUnits()
       if name and ns.call(UnitIsUnit, unit .. "target", "player") then
         attackers[name] = { name = name, summary = ns.UnitSummary(unit), lastSeen = now, source = "unit" }
       end
+    elseif IsHostileNPC(unit) and ns.call(UnitIsUnit, unit .. "target", "player") then
+      local name = ns.call(UnitName, unit)
+      if name then lastNpcAttacker = { name = name, at = now } end
     end
   end
   return hostiles
 end
+PvP.Scan = ScanUnits
 
 local function ActiveAttackers()
   local now, list = GetTime(), {}
@@ -92,14 +105,18 @@ function PvP.Check()
   p:Send()
 end
 
--- Most recent attacker if they hit you within KILLER_WINDOW seconds.
+-- Most recent attacker: a player seen within KILLER_WINDOW seconds or an NPC
+-- within NPC_KILLER_WINDOW, whichever was seen last (a player wins a tie).
 function PvP.RecentKiller()
   local now, best = GetTime(), nil
   for _, a in pairs(attackers) do
     if now - a.lastSeen <= KILLER_WINDOW and (not best or a.lastSeen > best.lastSeen) then best = a end
   end
+  local npc = lastNpcAttacker
+  if npc and now - npc.at <= NPC_KILLER_WINDOW and (not best or npc.at > best.lastSeen) then
+    return npc.name, false
+  end
   if best then return best.summary or best.name, true end
-  if lastNpcAttacker and now - lastNpcAttacker.at <= 10 then return lastNpcAttacker.name, false end
 end
 
 ------------------------------------------------------------------------------

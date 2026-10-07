@@ -116,6 +116,21 @@ death = LastPayload()
 check(Has(death, "k=Hillsbrad Farmer"), "npc killer from combat log: " .. death)
 check(Has(death, "kpvp=0"), "npc death not pvp")
 
+-- Death to an NPC seen only via its nameplate (no combat-log data) ----------------
+S.Advance(30)
+S.units.nameplate5 = { name = "Murloc Forager", level = 22, hostile = true, target = "player" }
+S.inCombat = true
+S.Fire("PLAYER_REGEN_DISABLED")
+S.Advance(2)
+S.Fire("PLAYER_DEAD")
+S.Advance(1)
+death = LastPayload()
+check(Has(death, "k=Murloc Forager"), "npc killer from nameplate scan: " .. death)
+check(Has(death, "kpvp=0"), "nameplate npc death not pvp")
+S.inCombat = false
+S.units.nameplate5 = nil
+S.Advance(2)
+
 -- Combat-log PvP (attacker with no nameplate) ---------------------------------------
 S.Advance(30)
 S.inCombat = true
@@ -159,7 +174,7 @@ S.Fire("PLAYER_LOGOUT")
 local summary = ForeverNotifyDB.lastSummary
 check(summary.startMoney == 100000, "summary start money")
 check(summary.endMoney == S.money, "summary end money")
-check(summary.deaths == 2, "summary deaths")
+check(summary.deaths == 3, "summary deaths")
 check(summary.accountMoney == S.money + 2500000, "account total")
 check(summary.accountChars == 2, "account character count")
 check(summary.startLevel == 23 and summary.endLevel == 24, "summary levels")

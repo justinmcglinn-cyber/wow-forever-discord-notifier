@@ -87,7 +87,7 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(fields["Net change"].split(" (")[0], "+46s 34c")
         self.assertIn("Quests: 50s 0c", fields["Income"])
         self.assertIn("across 2 characters", fields["All characters"])
-        self.assertEqual(fields["Deaths"], "2")
+        self.assertEqual(fields["Deaths"], "3")
         self.assertEqual(fields["Levels"], "23 → 24")
 
     def test_reload_then_logout_flow(self):

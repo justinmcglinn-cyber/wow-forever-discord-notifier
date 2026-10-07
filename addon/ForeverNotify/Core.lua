@@ -38,6 +38,7 @@ ns.On("PLAYER_DEAD", function()
   ns.Gold.AddDeath()
   if not ns.db.settings.death then return end
   local p = ns.NewPayload("DEATH"):SetLocation(ns.Location())
+  ns.PvP.Scan() -- catch an attacker still targeting you, even if no combat-log data arrived
   local killer, isPlayer = ns.PvP.RecentKiller()
   if killer then
     p:Set("k", killer):Set("kpvp", isPlayer and 1 or 0)
