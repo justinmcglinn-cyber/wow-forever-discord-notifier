@@ -1,4 +1,5 @@
 import io
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -81,6 +82,28 @@ class AddonInstall(unittest.TestCase):
         addon_install.install(self.wow)
         self.assertEqual(addon_install.status(self.wow), "current")
         self.assertFalse((self.target / "Stale.lua").exists())
+
+    def set_installed_version(self, version):
+        toc = self.target / "ForeverNotify.toc"
+        text = toc.read_text(encoding="utf-8")
+        toc.write_text(re.sub(r"(?m)^## Version: .*$", f"## Version: {version}", text), encoding="utf-8")
+
+    def test_sync(self):
+        bundled = addon_install.toc_version(addon_install.bundled_addon())
+        self.assertIsNotNone(bundled)
+        self.assertEqual(addon_install.sync(self.wow), "installed")
+        self.assertEqual(addon_install.sync(self.wow), "current")
+
+        self.set_installed_version("0.0.1")  # older: replaced
+        self.assertEqual(addon_install.sync(self.wow), "updated")
+        self.assertEqual(addon_install.status(self.wow), "current")
+
+        (self.target / "Core.lua").write_text("-- edited", encoding="utf-8")  # same version, different files
+        self.assertEqual(addon_install.sync(self.wow), "updated")
+
+        self.set_installed_version("999.0")  # newer: kept
+        self.assertEqual(addon_install.sync(self.wow), "kept-newer")
+        self.assertEqual(addon_install.toc_version(self.target), (999, 0))
 
     def test_missing_bundle(self):
         missing_source = self.wow / "nothing"

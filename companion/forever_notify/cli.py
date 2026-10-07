@@ -63,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--dry-run", action="store_true", help="print messages instead of posting them")
     sub.add_parser("test-webhook", help="post a test message to each configured channel")
     sub.add_parser("setup", help="run the setup questions again (rewrites config.toml), then start")
-    sub.add_parser("install-addon", help="install or update the add-on in your WoW Interface\\AddOns folder")
+    sub.add_parser("install-addon", help="reinstall the add-on in your WoW Interface\\AddOns folder, even if it's newer "
+                   "(run does this automatically when needed)")
     decode_p = sub.add_parser("decode", help="decode signal screenshots and print their payloads")
     decode_p.add_argument("files", nargs="+")
     args = parser.parse_args(argv)
@@ -114,11 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         sender = discord.Sender()
         send = sender.send
 
-    addon_state = addon_install.status(wow_dir)
-    if addon_state in ("missing", "outdated"):
-        logging.warning("The add-on in %s is %s. Run 'ForeverNotify.exe install-addon' to %s it.",
-                        addon_install.installed_addon(wow_dir).parent, "not installed" if addon_state == "missing"
-                        else "a different version from this companion", "install" if addon_state == "missing" else "update")
+    addon_install.sync_and_report(wow_dir)
     print("ForeverNotify is running. Leave this window open while you play; close it or press Ctrl+C to stop.")
     try:
         app.run(cfg, send)

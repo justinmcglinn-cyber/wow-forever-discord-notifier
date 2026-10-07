@@ -24,7 +24,7 @@ In your Discord server, go to **Server Settings → Integrations → Webhooks �
 Want each notification type in its own channel (e.g. `#deaths`, `#levelup`, `#pvp-alerts`, `#gold`)? Create one webhook per channel; setup asks for each.
 
 ### 2. Add-on
-`ForeverNotify.exe` installs the add-on for you during setup (step 3), and `ForeverNotify.exe install-addon` updates it later; the exe warns at start-up if the installed copy is missing or doesn't match. To do it by hand instead, copy `addon/ForeverNotify` into `<WoW Forever folder>\Interface\AddOns\`.
+`ForeverNotify.exe` installs the add-on for you during setup (step 3), and checks it every time it starts: a missing or older add-on is installed/updated automatically, an identical one is left alone, and a newer one (by the `.toc` version) is never downgraded. `ForeverNotify.exe install-addon` force-reinstalls the exe's copy. To do it by hand instead, copy `addon/ForeverNotify` into `<WoW Forever folder>\Interface\AddOns\`.
 
 If the character screen says the add-on is out of date, tick **Load out of date AddOns**.
 
