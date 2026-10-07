@@ -21,15 +21,19 @@ The companion only reads files the game writes. It never touches the game proces
 ### 1. Discord webhook
 In your Discord server, go to **Server Settings → Integrations → Webhooks → New Webhook**, pick the channel, then click **Copy Webhook URL**. Keep this URL private, because anyone with it can post to the channel.
 
+Want each notification type in its own channel (e.g. `#deaths`, `#levelup`, `#pvp-alerts`, `#gold`)? Create one webhook per channel; setup asks for each.
+
 ### 2. Add-on
-Copy `addon/ForeverNotify` into `<WoW Forever folder>\Interface\AddOns\`. If the character screen says it's out of date, tick **Load out of date AddOns**.
+`ForeverNotify.exe` installs the add-on for you during setup (step 3), and `ForeverNotify.exe install-addon` updates it later; the exe warns at start-up if the installed copy is missing or doesn't match. To do it by hand instead, copy `addon/ForeverNotify` into `<WoW Forever folder>\Interface\AddOns\`.
+
+If the character screen says the add-on is out of date, tick **Load out of date AddOns**.
 
 The add-on switches the screenshot format to PNG on login, because JPEG compression can corrupt the signal grid.
 
 ### 3. Companion (Windows)
 1. Download `ForeverNotify.exe` from the latest [release](../../releases) (or from the **build-exe** artifact of a recent Actions run), or build it yourself (see below).
 2. Put it in its own folder, e.g. `Documents\ForeverNotify`, and double-click it.
-3. The first time, it asks for your webhook URL and your WoW Forever folder (it offers any it finds), saves `config.toml` next to the exe, and posts a test message to Discord.
+3. The first time, it asks whether you want one Discord channel for everything or a separate channel per notification type (deaths, level ups, PvP alerts, gold summary), then for the webhook URL(s) and your WoW Forever folder (it offers any it finds). It saves `config.toml` next to the exe and posts a test message to each channel, saying which notifications will land there. Run `ForeverNotify.exe setup` to go through this again later.
 4. Leave the window open while you play. Close it to stop.
 
 Windows SmartScreen may warn that the app is unrecognised, because it isn't code-signed. Click **More info → Run anyway**.

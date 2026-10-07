@@ -25,6 +25,7 @@ class Config:
     notify: dict[str, bool] = field(default_factory=lambda: {e: True for e in EVENTS})
     webhooks: dict[str, str] = field(default_factory=dict)
     pvp_mention: str = ""
+    wow_dir: Path | None = None
 
     def webhook_for(self, event: str) -> str:
         return self.webhooks.get(event) or self.webhook_url
@@ -36,7 +37,7 @@ class Config:
 def load(path: str | Path) -> Config:
     path = Path(path)
     try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        raw = tomllib.loads(path.read_text(encoding="utf-8-sig"))  # -sig: Notepad may add a BOM
     except FileNotFoundError:
         raise ConfigError(f"Config file not found: {path} (copy config.example.toml to get started)")
     except tomllib.TOMLDecodeError as e:
@@ -67,4 +68,5 @@ def load(path: str | Path) -> Config:
         notify=notify,
         webhooks=webhooks,
         pvp_mention=raw.get("mentions", {}).get("pvp", ""),
+        wow_dir=Path(wow_dir) if wow_dir else None,
     )
