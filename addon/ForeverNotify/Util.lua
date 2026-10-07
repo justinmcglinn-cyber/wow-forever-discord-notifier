@@ -85,12 +85,24 @@ end)
 -- Character and location helpers
 ------------------------------------------------------------------------------
 
+-- The client may hide or blank the player's name/realm at times (notably during
+-- logout), which would make CharKey() miss this character's session. So keep the
+-- last real values and fall back to them.
+local knownName, knownRealm
+
+local function Real(v)
+  if v == nil or v == "" or v == "Unknown" or v == UNKNOWNOBJECT then return nil end
+  return v
+end
+
 function ns.PlayerName()
-  return ns.call(UnitName, "player") or "Unknown"
+  knownName = Real(ns.call(UnitName, "player")) or knownName
+  return knownName or "Unknown"
 end
 
 function ns.Realm()
-  return ns.call(GetNormalizedRealmName) or ns.call(GetRealmName) or "Unknown"
+  knownRealm = Real(ns.call(GetNormalizedRealmName)) or Real(ns.call(GetRealmName)) or knownRealm
+  return knownRealm or "Unknown"
 end
 
 function ns.CharKey()

@@ -239,8 +239,14 @@ check(#S.screenshots == count, "zoning sends nothing")
 -- Final logout ---------------------------------------------------------------------
 ForeverNotifyDB.chars["Jaina-Area52"] = { name = "Jaina", realm = "Area52", money = 2500000 }
 S.Advance(600)
+S.units.player.name = nil -- the client may blank the player's name during logout
 S.Fire("PLAYER_LOGOUT")
+S.units.player.name = "Thrall"
 local summary = ForeverNotifyDB.lastSummary
+check(summary.stop == time(), "summary written at final logout despite a blank name")
+check(summary.char == "Thrall", "summary keeps the character name")
+check(ForeverNotifyDB.chars["Unknown-Area52"] == nil, "no 'Unknown' character created")
+check(ForeverNotifyDB.lastLogout and ForeverNotifyDB.lastLogout.sessionFound, "logout diagnostic recorded")
 check(summary.startMoney == 100000, "summary start money")
 check(summary.endMoney == S.money, "summary end money")
 check(summary.deaths == 3, "summary deaths")

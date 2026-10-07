@@ -2,7 +2,7 @@
 ## Title: Forever Notify
 ## Notes: Sends death, level-up, PvP and logout gold-summary notifications to Discord via the ForeverNotify companion app.
 ## Author: justinmcglinn-cyber
-## Version: 0.1.3
+## Version: 0.1.4
 ## SavedVariables: ForeverNotifyDB
 
 Util.lua

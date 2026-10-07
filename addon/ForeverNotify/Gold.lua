@@ -115,6 +115,13 @@ end
 -- the add-on reports a reload shortly afterwards.
 function Gold.Finish()
   local session = Session()
+  -- Diagnostic kept in SavedVariables: what the client reported at logout.
+  ns.db.lastLogout = {
+    at = time(),
+    rawName = tostring(ns.call(UnitName, "player")),
+    key = ns.CharKey(),
+    sessionFound = session ~= nil,
+  }
   if not session then return end
   local char = UpdateCharacter()
 
