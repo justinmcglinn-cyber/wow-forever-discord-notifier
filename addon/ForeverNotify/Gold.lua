@@ -60,14 +60,22 @@ local function Record(session, delta, category)
   bucket[category] = (bucket[category] or 0) + math.abs(delta)
 end
 
-local function UpdateCharacter()
+-- atLogout: the client reports 0 gold (and may report level 0) while quitting,
+-- so use the money tracked through the session instead of GetMoney().
+local function UpdateCharacter(atLogout)
   local key = sessionKey or ns.CharKey()
   local char = ns.db.chars[key] or {}
   ns.db.chars[key] = char
   char.name = ns.PlayerName()
   char.realm = ns.Realm()
-  char.money = ns.call(GetMoney) or char.money
-  char.level = ns.call(UnitLevel, "player") or char.level
+  local session = ns.db.sessions[key]
+  if atLogout and session and session.lastMoney then
+    char.money = session.lastMoney
+  else
+    char.money = ns.call(GetMoney) or char.money
+  end
+  local level = ns.call(UnitLevel, "player")
+  if level and level > 0 then char.level = level end
   local _, classFile = ns.call(UnitClass, "player")
   char.class = classFile or char.class
   char.seen = time()
@@ -126,9 +134,10 @@ function Gold.Finish()
     rawName = tostring(ns.call(UnitName, "player")),
     key = ns.CharKey(),
     sessionFound = session ~= nil,
+    rawMoney = tostring(ns.call(GetMoney)),
   }
   if not session then return end
-  local char = UpdateCharacter()
+  local char = UpdateCharacter(true)
 
   local total, count = 0, 0
   for _, c in pairs(ns.db.chars) do

@@ -241,9 +241,11 @@ ForeverNotifyDB.chars["Jaina-Area52"] = { name = "Jaina", realm = "Area52", mone
 S.Advance(600)
 -- When quitting, the client blanks the normalized realm (GetRealmName gives "Area 52")
 -- and may blank the player's name.
-S.units.player.name, S.hideNormalizedRealm = nil, true
+-- It also reports 0 gold and level 0 then.
+local realMoney = S.money
+S.units.player.name, S.hideNormalizedRealm, S.money, S.units.player.level = nil, true, 0, 0
 S.Fire("PLAYER_LOGOUT")
-S.units.player.name, S.hideNormalizedRealm = "Thrall", false
+S.units.player.name, S.hideNormalizedRealm, S.money, S.units.player.level = "Thrall", false, realMoney, 24
 local summary = ForeverNotifyDB.lastSummary
 check(summary.stop == time(), "summary written at final logout despite a blank name")
 check(summary.char == "Thrall", "summary keeps the character name")
