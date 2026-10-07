@@ -206,3 +206,40 @@ def format_summary(s: dict[str, Any]) -> dict:
     title = f"💰 {p['c']} logged out — gold summary"
     description = f"Logged out in {s['zone']}" if s.get("zone") else ""
     return {"embeds": [_embed(kind, title, p, description, fields)]}
+
+
+def sample_messages(p: dict[str, str], pvp_mention: str = "") -> dict[str, dict]:
+    """A made-up example of each notification, marked as a test, keyed by event.
+
+    `p` is a TEST signal payload (character, location, time) so the samples
+    look like real messages for that character.
+    """
+    base = {k: v for k, v in p.items() if k in ("c", "r", "lv", "ts", "zone", "sz", "x", "y", "pvp", "inst")}
+    base.setdefault("c", "Companion")
+    base.setdefault("r", "PC")
+    base.setdefault("ts", str(int(datetime.now(timezone.utc).timestamp())))
+    try:
+        level = int(base.get("lv") or 24)
+    except ValueError:
+        level = 24
+    base["lv"] = str(level)
+    stop = int(base["ts"])
+
+    samples = {
+        "death": format_signal({**base, "t": "DEATH", "k": "Murloc Forager", "kpvp": "0"}),
+        "level": format_signal({**base, "t": "LEVEL", "new": str(level + 1), "prev": "4500", "sess": "5400"}),
+        "pvp": format_signal({**base, "t": "PVP", "a1": "Gankster|Stormrage|60|Rogue|Undead|Shadow Council",
+                              "hp": "45", "near": "2"}, pvp_mention),
+        "summary": format_summary({
+            "char": base["c"], "realm": base["r"], "start": stop - 5400, "stop": stop,
+            "startMoney": 80130, "endMoney": 97300, "startLevel": level, "endLevel": level + 1,
+            "income": {"loot": 6490, "quest": 12000}, "expense": {"vendor": 1320}, "deaths": 1,
+            "zone": base.get("zone"),
+        }),
+    }
+    for body in samples.values():
+        embed = body["embeds"][0]
+        embed["title"] = "🧪 TEST · " + embed["title"]
+        note = "*Test message: if you can read this, this channel is set up correctly.*"
+        embed["description"] = (embed.get("description", "") + "\n\n" + note).strip()
+    return samples

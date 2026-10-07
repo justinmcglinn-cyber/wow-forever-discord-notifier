@@ -26,6 +26,7 @@ class Config:
     webhooks: dict[str, str] = field(default_factory=dict)
     pvp_mention: str = ""
     wow_dir: Path | None = None
+    state_file: Path | None = None  # remembers posted summaries; None = in memory only
 
     def webhook_for(self, event: str) -> str:
         return self.webhooks.get(event) or self.webhook_url
@@ -69,4 +70,5 @@ def load(path: str | Path) -> Config:
         webhooks=webhooks,
         pvp_mention=raw.get("mentions", {}).get("pvp", ""),
         wow_dir=Path(wow_dir) if wow_dir else None,
+        state_file=path.parent / "state.json",
     )

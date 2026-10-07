@@ -181,5 +181,88 @@ class Watching(unittest.TestCase):
         self.assertEqual(sent, [])
 
 
+WEBHOOKS = {"level": "https://hook/level", "pvp": "https://hook/pvp", "flag": "https://hook/pvp",
+            "summary": "https://hook/gold"}
+
+
+def multi_channel_config(**kwargs):
+    return config.Config(webhook_url="https://hook/deaths", screenshots_dir=Path("."), saved_variables_glob="",
+                         webhooks=dict(WEBHOOKS), **kwargs)
+
+
+class TestMessages(unittest.TestCase):
+    def test_samples_cover_every_channel_and_are_marked(self):
+        samples = formatting.sample_messages({"c": "Frostbolt", "r": "Realm", "lv": "24", "zone": "Wetlands"},
+                                             pvp_mention="<@1>")
+        self.assertEqual(set(samples), {"death", "level", "pvp", "summary"})
+        for body in samples.values():
+            self.assertTrue(body["embeds"][0]["title"].startswith("🧪 TEST · "))
+            self.assertIn("Test message", body["embeds"][0]["description"])
+        self.assertIn("Frostbolt reached level 25", samples["level"]["embeds"][0]["title"])
+        self.assertEqual(samples["pvp"]["content"], "<@1>")
+
+    def test_in_game_test_posts_a_sample_to_each_channel(self):
+        sent = []
+        Notifier(multi_channel_config(), lambda url, body: sent.append((url, body["embeds"][0]["title"]))) \
+            .handle_signal({"t": "TEST", "c": "Frostbolt", "r": "Realm", "ts": "1791373687"})
+        urls = [url for url, _ in sent]
+        self.assertEqual(urls, ["https://hook/deaths", "https://hook/level", "https://hook/pvp", "https://hook/gold"])
+        self.assertIn("died", sent[0][1])
+        self.assertIn("gold summary", sent[3][1])
+
+
+def saved_vars(stop, summary_id="Frostbolt-Realm:1000"):
+    return ('ForeverNotifyDB = {["lastSummary"] = {["id"] = "%s", ["char"] = "Frostbolt", ["realm"] = "Realm", '
+            '["start"] = 1000, ["stop"] = %d, ["startMoney"] = 100, ["endMoney"] = 250, ["enabled"] = true}}'
+            % (summary_id, stop))
+
+
+class SummaryCatchUp(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.sent = []
+
+    def notifier(self):
+        cfg = multi_channel_config(state_file=self.tmp / "state.json", summary_grace_seconds=30)
+        return Notifier(cfg, lambda url, body: self.sent.append(url))
+
+    def test_missed_logout_posted_once_when_game_closed(self):
+        now = 1_800_000_000
+        n = self.notifier()
+        n.catch_up(saved_vars(now - 600), now, game_running=False)
+        n.tick(now)
+        self.assertEqual(self.sent, ["https://hook/gold"])
+        # Restarting the companion doesn't post it again.
+        n = self.notifier()
+        n.catch_up(saved_vars(now - 600), now + 60, game_running=False)
+        n.tick(now + 60)
+        self.assertEqual(self.sent, ["https://hook/gold"])
+
+    def test_old_summary_not_posted_while_game_running(self):
+        now = 1_800_000_000
+        n = self.notifier()
+        n.catch_up(saved_vars(now - 600), now, game_running=True)  # maybe a /reload
+        n.tick(now + 100)
+        self.assertEqual(self.sent, [])
+
+    def test_logout_just_before_start_up_gets_normal_grace(self):
+        now = 1_800_000_000
+        n = self.notifier()
+        n.catch_up(saved_vars(now - 4), now, game_running=True)
+        n.tick(now + 10)
+        self.assertEqual(self.sent, [])  # still within the /reload grace period
+        n.tick(now + 31)
+        self.assertEqual(self.sent, ["https://hook/gold"])
+
+    def test_live_logout_then_unchanged_save_posts_once(self):
+        now = 1_800_000_000
+        n = self.notifier()
+        n.handle_saved_variables(saved_vars(now), now)
+        n.tick(now + 31)
+        n.handle_saved_variables(saved_vars(now), now + 200)  # game exits from character select
+        n.tick(now + 300)
+        self.assertEqual(self.sent, ["https://hook/gold"])
+
+
 if __name__ == "__main__":
     unittest.main()

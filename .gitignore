@@ -6,3 +6,4 @@ build/
 dist/
 *.spec
 companion/baked_config.toml
+companion/state.json

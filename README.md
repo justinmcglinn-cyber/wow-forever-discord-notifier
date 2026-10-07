@@ -48,19 +48,19 @@ Extra options (per-event channels, @mentions…) live in `config.toml`; open it 
 1. Install Python 3.11+ from python.org (tick "Add to PATH").
 2. In `companion\`, run `py -m pip install -r requirements.txt`.
 3. Copy `config.example.toml` to `config.toml`. Paste your webhook URL and set `wow_dir` to your Forever install folder (the one containing `Screenshots` and `WTF`).
-4. Run `py -m forever_notify test-webhook`. A test message should appear in Discord.
+4. Run `py -m forever_notify test-webhook`. A sample of each notification should appear in Discord.
 5. Start the companion with `run.bat`, or `py -m forever_notify run`, and leave it running while you play.
 </details>
 
 ### 4. Check it end to end
-In game, type `/fnotify test`. Within about a second you should get a ✅ message in Discord.
+In game, type `/fnotify test`. Within a few seconds each channel should get a sample message marked 🧪 TEST: a death, a level-up, a PvP alert and a gold summary, each in the channel it's configured for. `ForeverNotify.exe test-webhook` sends the same samples without the game.
 
 ## In-game commands
 
 | Command | Effect |
 |---|---|
 | `/fnotify` | Show status and which notifications are on |
-| `/fnotify test` | Send a test notification |
+| `/fnotify test` | Send a sample of every notification, each to its channel |
 | `/fnotify death` / `level` / `pvp` / `summary` / `flag` | Toggle that notification (`flag` = PvP flag on/off, off by default) |
 | `/fnotify combatlog` | Turn combat-log reading on/off (off by default on Forever, which forbids it) |
 | `/fnotify preview` | Show the signal grid for 5 seconds without taking a screenshot |
@@ -73,13 +73,13 @@ Companion options live in `config.toml`: per-event on/off, separate webhooks per
 - **Forever uses Midnight's add-on restrictions ("secret values").** The add-on checks every value before using it, so restricted values are skipped rather than causing errors. During boss encounters and Mythic+, some details (e.g. health) may be missing.
 - **No combat log on Forever.** The client forbids add-ons from reading the combat log (trying shows a "blocked from an action only available to the Blizzard UI" popup), so the add-on leaves it off on clients with secret values. Attackers and killers are found from your target, focus, mouseover and nameplates instead: an enemy (player or NPC) has to be visible there and targeting you. Keep enemy nameplates on for the best results. A stealthed attacker you never see shows up only once visible, and a death may say "Cause unknown" if the killer was never visible.
 - **Blocked calls are reported.** If the game ever blocks the add-on, a red chat line names the function and `/fnotify` lists recent ones.
-- **The gold summary is posted about 30 seconds after logout.** The delay lets the companion tell a real logout from a `/reload`. If the game crashes, the session isn't saved and no summary is sent.
+- **The gold summary is posted about 30 seconds after logout.** The delay lets the companion tell a real logout from a `/reload`. If the game crashes, the session isn't saved and no summary is sent. If the companion wasn't running when you logged out, it posts that summary the next time it starts while WoW is closed (it remembers what it has posted in `state.json`, so nothing is sent twice).
 
 ## First beta session checklist
 
 None of this has been run in the real client yet. On first use:
 
-1. Run `/fnotify test` and confirm a Discord message arrives and the signal screenshot is deleted.
+1. Run `/fnotify test` and confirm a sample arrives in every channel and the signal screenshot is deleted.
 2. Run `/fnotify` and check no "Blocked by the game" lines are listed.
 3. Die once, level once and log out once, and check each message.
 4. If anything fails, turn on `/fnotify debug`, run the companion with `ForeverNotify.exe -v run` (or `py -m forever_notify -v run`), and share the output.

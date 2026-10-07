@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import glob
+import json
 import logging
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -17,6 +20,8 @@ log = logging.getLogger(__name__)
 
 IMAGE_SUFFIXES = {".png", ".tga", ".jpg", ".jpeg"}
 GIVE_UP_AFTER = 10  # seconds to keep retrying a file that won't open
+RECENT_LOGOUT = 90  # a summary saved this many seconds before start-up is handled as if seen live
+CATCH_UP_MAX = 24 * 3600  # older unposted summaries are posted at start-up only if WoW isn't running
 
 
 class FolderWatcher:
@@ -88,6 +93,45 @@ class ChangeWatcher:
         return changed
 
 
+class PostedSummaries:
+    """Logout summaries already posted (or deliberately skipped), kept across restarts in state.json."""
+
+    KEEP = 50
+
+    def __init__(self, path: Path | None = None):
+        self._path = path
+        self._items: list[tuple[str, int]] = []
+        if path:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                self._items = [self._key(i) for i in data.get("posted_summaries", [])]
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
+
+    @staticmethod
+    def _key(ident) -> tuple[str, int]:
+        summary_id, stop = ident
+        try:
+            stop = int(stop)
+        except (TypeError, ValueError):
+            stop = 0
+        return str(summary_id), stop
+
+    def __contains__(self, ident) -> bool:
+        return self._key(ident) in self._items
+
+    def add(self, ident) -> None:
+        key = self._key(ident)
+        if key in self._items:
+            return
+        self._items = (self._items + [key])[-self.KEEP:]
+        if self._path:
+            try:
+                self._path.write_text(json.dumps({"posted_summaries": self._items}), encoding="utf-8")
+            except OSError as e:
+                log.warning("Could not save %s: %s", self._path, e)
+
+
 class Notifier:
     """Turns decoded signals and logout summaries into Discord messages."""
 
@@ -96,7 +140,7 @@ class Notifier:
         self.send = send
         self._pending_summaries: dict[str, tuple[float, dict]] = {}
         self._last_signal_ts: dict[str, int] = {}
-        self._posted_summaries: set[tuple] = set()
+        self._posted_summaries = PostedSummaries(config.state_file)
 
     @staticmethod
     def _char_key(name, realm) -> str:
@@ -119,21 +163,58 @@ class Notifier:
         if not self.config.enabled(event):
             log.info("Skipping %s (disabled in config)", kind)
             return
+        if kind == "TEST":  # a sample of every notification, each to its own channel
+            for sample_event, body in formatting.sample_messages(payload, self.config.pvp_mention).items():
+                if self.config.enabled(sample_event):
+                    self.send(self.config.webhook_for(sample_event), body)
+            return
         body = formatting.format_signal(payload, self.config.pvp_mention)
         if body:
             self.send(self.config.webhook_for(event), body)
 
-    def handle_saved_variables(self, text: str, now: float) -> None:
+    @staticmethod
+    def _summary(text: str) -> dict | None:
         try:
             data = parse_saved_variables(text)
         except (LuaParseError, IndexError) as e:
             log.warning("Could not parse SavedVariables: %s", e)
-            return
+            return None
         summary = (data.get("ForeverNotifyDB") or {}).get("lastSummary")
-        if not isinstance(summary, dict) or not summary.get("id"):
+        return summary if isinstance(summary, dict) and summary.get("id") else None
+
+    def catch_up(self, text: str, now: float, game_running: bool) -> None:
+        """At start-up, deal with a logout summary saved while the companion wasn't watching."""
+        summary = self._summary(text)
+        if summary is None:
             return
         ident = (summary.get("id"), summary.get("stop"))
         if ident in self._posted_summaries:
+            log.info("Last logout summary was already posted.")
+            return
+        try:
+            age = now - int(summary.get("stop", 0))
+        except (TypeError, ValueError):
+            return
+        when = time.strftime("%H:%M", time.localtime(now - age))
+        if age <= RECENT_LOGOUT:
+            # Saved moments before start-up: treat it like a logout seen live.
+            self.handle_saved_variables(text, now)
+        elif not game_running and age <= CATCH_UP_MAX:
+            log.info("Posting the summary from your logout at %s (saved while the companion wasn't running).", when)
+            key = self._char_key(summary.get("char"), summary.get("realm"))
+            self._pending_summaries[key] = (now, summary)
+        else:
+            reason = "WoW is running, so it may have been a /reload" if game_running else "it's too old"
+            log.info("Not posting the last summary (from %s): %s.", when, reason)
+
+    def handle_saved_variables(self, text: str, now: float) -> None:
+        summary = self._summary(text)
+        if summary is None:
+            log.info("Game saved the add-on's data (no logout summary in it).")
+            return
+        ident = (summary.get("id"), summary.get("stop"))
+        if ident in self._posted_summaries:
+            log.info("Game saved the add-on's data (no new logout summary).")
             return
         if summary.get("enabled") is False or not self.config.enabled("summary"):
             self._posted_summaries.add(ident)
@@ -184,7 +265,23 @@ def process_screenshot(path: Path, notifier: Notifier, delete: bool) -> bool:
     return True
 
 
-def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bool] = lambda: False) -> None:
+def game_running(config: Config) -> bool:
+    """True if a WoW executable from the configured install is running (or we can't tell)."""
+    wow_dir = config.wow_dir or config.screenshots_dir.parent
+    names = {p.name.lower() for p in Path(wow_dir).glob("Wow*.exe")}
+    if not names or sys.platform != "win32":
+        return True
+    try:
+        result = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=10,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return True
+    running = {line.split('","')[0].strip('"').lower() for line in result.stdout.splitlines() if line}
+    return bool(names & running)
+
+
+def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bool] = lambda: False,
+        is_game_running: Callable[[], bool] | None = None) -> None:
     if not config.screenshots_dir.is_dir():
         log.warning("Screenshots folder %s doesn't exist yet; it will be watched once created",
                     config.screenshots_dir)
@@ -193,6 +290,13 @@ def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bo
     notifier = Notifier(config, send)
     log.info("Watching %s", config.screenshots_dir)
     log.info("Watching %s", config.saved_variables_glob)
+
+    running = (is_game_running or (lambda: game_running(config)))()
+    for path in glob.glob(config.saved_variables_glob):
+        try:
+            notifier.catch_up(Path(path).read_text(encoding="utf-8", errors="replace"), time.time(), running)
+        except OSError as e:
+            log.warning("Could not read %s: %s", path, e)
 
     while not stop():
         now = time.time()

@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from forever_notify import addon_install, cli, config, setup_wizard
+from forever_notify import addon_install, config, setup_wizard
 
 WEBHOOK = "https://discord.com/api/webhooks/123/abc"
 
@@ -40,9 +40,6 @@ class SetupWizard(unittest.TestCase):
         self.assertEqual(cfg.webhook_url, deaths)
         for event, url in [("death", deaths), ("level", level), ("pvp", pvp), ("flag", pvp), ("summary", gold)]:
             self.assertEqual(cfg.webhook_for(event), url, event)
-        self.assertEqual(cli.channel_events(cfg), {
-            deaths: ["Deaths", "Tests"], level: ["Level ups"], pvp: ["PvP alerts"],
-            gold: ["Gold summary (on logout)"]})
 
     def test_separate_channels_enter_reuses_previous(self):
         other = WEBHOOK + "/other"

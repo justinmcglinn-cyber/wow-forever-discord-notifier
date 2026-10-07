@@ -21,26 +21,16 @@ def default_config_path() -> Path:
     return Path(sys.executable).parent / "config.toml" if FROZEN else Path("config.toml")
 
 
-def channel_events(cfg: config.Config) -> dict[str, list[str]]:
-    """Each distinct webhook and the notification types that go to it."""
-    channels: dict[str, list[str]] = {}
-    for event, label in setup_wizard.CHANNELS:
-        channels.setdefault(cfg.webhook_for(event), []).append(label)
-    channels.setdefault(cfg.webhook_url, []).append("Tests")
-    return channels
-
-
 def send_tests(cfg: config.Config) -> bool:
-    """Post a test message to every configured channel. Returns True if all arrived."""
+    """Post a sample of each notification to its channel. Returns True if all arrived."""
     ok = True
-    for i, (url, labels) in enumerate(channel_events(cfg).items(), 1):
-        body = formatting.format_signal({"t": "TEST", "c": "Companion", "r": "PC", "ts": str(int(time.time()))})
-        body["embeds"][0]["description"] = "This channel will get: " + ", ".join(labels)
+    samples = formatting.sample_messages({"c": "Companion", "r": "PC", "ts": str(int(time.time()))}, cfg.pvp_mention)
+    for event, label in setup_wizard.CHANNELS:
         try:
-            discord.post(url, body)
-            print(f"Test message sent to channel {i} ({', '.join(labels)}).")
+            discord.post(cfg.webhook_for(event), samples[event])
+            print(f"Sent a sample {label} message.")
         except RuntimeError as e:
-            print(f"Could not post to channel {i} ({', '.join(labels)}): {e}", file=sys.stderr)
+            print(f"Could not post the sample {label} message: {e}", file=sys.stderr)
             ok = False
     return ok
 
@@ -62,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command")
     run_p = sub.add_parser("run", help="watch for events and post them to Discord (default)")
     run_p.add_argument("--dry-run", action="store_true", help="print messages instead of posting them")
-    sub.add_parser("test-webhook", help="post a test message to each configured channel")
+    sub.add_parser("test-webhook", help="post a sample of each notification to its channel")
     sub.add_parser("setup", help="run the setup questions again (rewrites config.toml), then start")
     sub.add_parser("install-addon", help="reinstall the add-on in your WoW Interface\\AddOns folder, even if it's newer "
                    "(run does this automatically when needed)")
