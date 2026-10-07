@@ -85,9 +85,10 @@ end)
 -- Character and location helpers
 ------------------------------------------------------------------------------
 
--- The client may hide or blank the player's name/realm at times (notably during
--- logout), which would make CharKey() miss this character's session. So keep the
--- last real values and fall back to them.
+-- The client may hide or blank the player's name/realm at times (when quitting
+-- the game, GetNormalizedRealmName() returns nil and GetRealmName() gives the
+-- spaced display name), which would make CharKey() miss this character's
+-- session. So keep the last real values and fall back to them.
 local knownName, knownRealm
 
 local function Real(v)
@@ -100,8 +101,11 @@ function ns.PlayerName()
   return knownName or "Unknown"
 end
 
+-- Normalized form ("Classic Beta PvP" -> "ClassicBetaPvP"), preferring the one
+-- seen earlier over normalizing the display name ourselves.
 function ns.Realm()
-  knownRealm = Real(ns.call(GetNormalizedRealmName)) or Real(ns.call(GetRealmName)) or knownRealm
+  local display = Real(ns.call(GetRealmName))
+  knownRealm = Real(ns.call(GetNormalizedRealmName)) or knownRealm or (display and display:gsub("[%s%-]", ""))
   return knownRealm or "Unknown"
 end
 

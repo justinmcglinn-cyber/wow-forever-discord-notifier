@@ -179,7 +179,7 @@ function GetPlayerInfoByGUID(guid) local i = S.guidInfo[guid]; if i then return 
 function GetMoney() return S.money end
 function GetRealZoneText() return S.zone end
 function GetSubZoneText() return S.subzone end
-function GetNormalizedRealmName() return "Area52" end
+function GetNormalizedRealmName() if not S.hideNormalizedRealm then return "Area52" end end
 function GetRealmName() return "Area 52" end
 function IsInInstance() return false, "none" end
 function GetPhysicalScreenSize() return 1920, 1080 end

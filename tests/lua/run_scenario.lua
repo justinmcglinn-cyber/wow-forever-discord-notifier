@@ -239,9 +239,11 @@ check(#S.screenshots == count, "zoning sends nothing")
 -- Final logout ---------------------------------------------------------------------
 ForeverNotifyDB.chars["Jaina-Area52"] = { name = "Jaina", realm = "Area52", money = 2500000 }
 S.Advance(600)
-S.units.player.name = nil -- the client may blank the player's name during logout
+-- When quitting, the client blanks the normalized realm (GetRealmName gives "Area 52")
+-- and may blank the player's name.
+S.units.player.name, S.hideNormalizedRealm = nil, true
 S.Fire("PLAYER_LOGOUT")
-S.units.player.name = "Thrall"
+S.units.player.name, S.hideNormalizedRealm = "Thrall", false
 local summary = ForeverNotifyDB.lastSummary
 check(summary.stop == time(), "summary written at final logout despite a blank name")
 check(summary.char == "Thrall", "summary keeps the character name")
