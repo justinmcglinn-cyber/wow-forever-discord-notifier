@@ -66,6 +66,12 @@ function ns.On(event, fn)
   list[#list + 1] = fn
 end
 
+-- Stops listening for an event and drops its handlers.
+function ns.Off(event)
+  handlers[event] = nil
+  pcall(eventFrame.UnregisterEvent, eventFrame, event)
+end
+
 eventFrame:SetScript("OnEvent", function(_, event, ...)
   local list = handlers[event]
   if not list then return end

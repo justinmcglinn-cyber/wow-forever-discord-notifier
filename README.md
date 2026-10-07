@@ -60,6 +60,7 @@ In game, type `/fnotify test`. Within about a second you should get a ✅ messag
 | `/fnotify` | Show status and which notifications are on |
 | `/fnotify test` | Send a test notification |
 | `/fnotify death` / `level` / `pvp` / `summary` / `flag` | Toggle that notification (`flag` = PvP flag on/off, off by default) |
+| `/fnotify combatlog` | Turn combat-log reading on/off (off by default on Forever, which forbids it) |
 | `/fnotify preview` | Show the signal grid for 5 seconds without taking a screenshot |
 | `/fnotify debug` | Toggle debug output in chat |
 
@@ -68,7 +69,8 @@ Companion options live in `config.toml`: per-event on/off, separate webhooks per
 ## Limits
 
 - **Forever uses Midnight's add-on restrictions ("secret values").** The add-on checks every value before using it, so restricted values are skipped rather than causing errors. During boss encounters and Mythic+, some details (e.g. health) may be missing.
-- **PvP detection** needs the attacker to have a visible nameplate or be your target, or the game must let add-ons read the combat log outside encounters. A stealthed attacker you never see may only show up as "under attack" once they're visible, or as the killer if the combat log is available.
+- **No combat log on Forever.** The client forbids add-ons from reading the combat log (trying shows a "blocked from an action only available to the Blizzard UI" popup), so the add-on leaves it off on clients with secret values. Attackers and killers are found from your target, focus, mouseover and nameplates instead: an enemy (player or NPC) has to be visible there and targeting you. Keep enemy nameplates on for the best results. A stealthed attacker you never see shows up only once visible, and a death may say "Cause unknown" if the killer was never visible.
+- **Blocked calls are reported.** If the game ever blocks the add-on, a red chat line names the function and `/fnotify` lists recent ones.
 - **The gold summary is posted about 30 seconds after logout.** The delay lets the companion tell a real logout from a `/reload`. If the game crashes, the session isn't saved and no summary is sent.
 
 ## First beta session checklist
@@ -76,7 +78,7 @@ Companion options live in `config.toml`: per-event on/off, separate webhooks per
 None of this has been run in the real client yet. On first use:
 
 1. Run `/fnotify test` and confirm a Discord message arrives and the signal screenshot is deleted.
-2. Run `/fnotify` and note whether "Combat log PvP detection" is on.
+2. Run `/fnotify` and check no "Blocked by the game" lines are listed.
 3. Die once, level once and log out once, and check each message.
 4. If anything fails, turn on `/fnotify debug`, run the companion with `ForeverNotify.exe -v run` (or `py -m forever_notify -v run`), and share the output.
 

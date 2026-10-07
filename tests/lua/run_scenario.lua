@@ -40,7 +40,12 @@ local function Has(text, line)
 end
 
 -- Login ---------------------------------------------------------------------
+-- The stub has secret values, so "auto" would leave the combat log off; turn it
+-- on to exercise the combat-log paths (the auto default is checked further down).
+check(not S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "combat log not registered at file load")
+ForeverNotifyDB = { settings = { combatLog = true } }
 S.Fire("ADDON_LOADED", "ForeverNotify")
+check(S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "combat log registered when enabled")
 S.Fire("PLAYER_ENTERING_WORLD", true, false)
 check(S.cvars.screenshotFormat == "png", "screenshot format switched to png")
 S.Advance(3)
@@ -144,6 +149,22 @@ check(Has(LastPayload(), "a1=Sneaky|Stormrage||Rogue|Night Elf|"), "combat-log a
 S.inCombat = false
 S.Advance(2)
 
+-- Combat log toggles --------------------------------------------------------------
+SlashCmdList.FOREVERNOTIFY("combatlog")
+check(not S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "combat log unregistered by /fnotify combatlog")
+check(not ns.PvP.CombatLogAvailable(), "combat log reported off")
+SlashCmdList.FOREVERNOTIFY("combatlog")
+check(S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "combat log registered again")
+ForeverNotifyDB.settings.combatLog = nil -- auto: off on clients with secret values
+ns.PvP.SetupCombatLog()
+check(not S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "auto leaves combat log off on Midnight-era clients")
+
+-- Game blocks one of our calls --------------------------------------------------
+S.Fire("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon", "CastSpellByName()")
+check(ForeverNotifyDB.blocked == nil, "other add-ons' blocked calls ignored")
+S.Fire("ADDON_ACTION_FORBIDDEN", "ForeverNotify", "Screenshot()")
+check(ForeverNotifyDB.blocked and ForeverNotifyDB.blocked[1].func == "Screenshot()", "blocked call recorded")
+
 -- Level up ---------------------------------------------------------------------
 S.units.player.level = 24
 S.Fire("PLAYER_LEVEL_UP", 24)
@@ -179,8 +200,8 @@ check(summary.accountMoney == S.money + 2500000, "account total")
 check(summary.accountChars == 2, "account character count")
 check(summary.startLevel == 23 and summary.endLevel == 24, "summary levels")
 
--- Blocked combat log must not break loading ------------------------------------------
-check(ns.PvP.CombatLogAvailable(), "combat log reported available")
+-- Combat log stays off in auto mode on a Midnight-era client -------------------------
+check(not ns.PvP.CombatLogAvailable(), "combat log reported off in auto mode")
 
 -- Outputs -----------------------------------------------------------------------
 local records = {}

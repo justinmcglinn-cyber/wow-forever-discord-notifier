@@ -174,10 +174,31 @@ local function OnCombatLog()
   end
 end
 
-ns.On("COMBAT_LOG_EVENT_UNFILTERED", OnCombatLog)
+-- Midnight-era clients forbid add-ons from registering for the combat log:
+-- doing so pops up "blocked from an action only available to the Blizzard UI".
+-- So by default ("auto") it's only used on clients without secret values;
+-- /fnotify combatlog overrides that.
+local combatLogOn = false
+
+function PvP.CombatLogWanted()
+  local setting = ns.db and ns.db.settings.combatLog
+  if setting == nil then return issecretvalue == nil end
+  return setting and true or false
+end
+
+function PvP.SetupCombatLog()
+  local want = PvP.CombatLogWanted()
+  if want and not combatLogOn then
+    ns.On("COMBAT_LOG_EVENT_UNFILTERED", OnCombatLog)
+  elseif not want and combatLogOn then
+    ns.Off("COMBAT_LOG_EVENT_UNFILTERED")
+  end
+  combatLogOn = want
+end
 
 function PvP.CombatLogAvailable()
-  return not ns.unavailableEvents.COMBAT_LOG_EVENT_UNFILTERED and type(CombatLogGetCurrentEventInfo) == "function"
+  return combatLogOn and not ns.unavailableEvents.COMBAT_LOG_EVENT_UNFILTERED
+    and type(CombatLogGetCurrentEventInfo) == "function"
 end
 
 ------------------------------------------------------------------------------

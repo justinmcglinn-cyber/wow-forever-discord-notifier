@@ -40,6 +40,15 @@ function Frame:RegisterEvent(event)
   if S.blockedEvents[event] then error("Attempt to register unknown event \"" .. event .. "\"") end
   self.events[event] = true
 end
+function Frame:UnregisterEvent(event) self.events[event] = nil end
+
+-- True if any frame is registered for the event.
+function S.Registered(event)
+  for _, f in ipairs(S.frames) do
+    if f.events[event] then return true end
+  end
+  return false
+end
 function Frame:SetScript(kind, fn) self.scripts[kind] = fn end
 function Frame:GetScript(kind) return self.scripts[kind] end
 function Frame:Show() self.shown = true end

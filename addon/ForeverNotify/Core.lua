@@ -13,7 +13,10 @@ local function InitDB()
 end
 
 ns.On("ADDON_LOADED", function(name)
-  if name == ADDON then InitDB() end
+  if name == ADDON then
+    InitDB()
+    ns.PvP.SetupCombatLog()
+  end
 end)
 
 local enteredWorld = false
@@ -67,6 +70,23 @@ ns.On("PLAYER_LOGOUT", function()
   ns.Gold.Finish()
 end)
 
+-- When the game blocks one of our calls (the "blocked from an action only
+-- available to the Blizzard UI" popup), say which one so it can be fixed.
+local function OnBlocked(addon, func)
+  if addon ~= ADDON then return end
+  local inCombat = ns.call(InCombatLockdown) and true or false
+  local entry = { func = tostring(func), inCombat = inCombat, at = time() }
+  if ns.db then
+    ns.db.blocked = ns.db.blocked or {}
+    table.insert(ns.db.blocked, 1, entry)
+    for i = #ns.db.blocked, 11, -1 do ns.db.blocked[i] = nil end
+  end
+  ns.Print("|cffff5555The game blocked|r " .. entry.func .. (inCombat and " (in combat)" or " (out of combat)")
+    .. ". Please report this; click Ignore on the popup.")
+end
+ns.On("ADDON_ACTION_FORBIDDEN", OnBlocked)
+ns.On("ADDON_ACTION_BLOCKED", OnBlocked)
+
 ------------------------------------------------------------------------------
 -- Slash commands
 ------------------------------------------------------------------------------
@@ -82,9 +102,16 @@ local function Status()
     print(string.format("  %s (%s): %s", TOGGLES[key], key, OnOff(s[key])))
   end
   print("  Screenshot format: " .. tostring(ns.call(GetCVar, "screenshotFormat")))
-  print("  Combat log PvP detection: " .. OnOff(ns.PvP.CombatLogAvailable()))
+  print("  Combat log (killers/attackers you can't see): " .. OnOff(ns.PvP.CombatLogAvailable())
+    .. (s.combatLog == nil and " (auto)" or ""))
   print("  Queued signals: " .. ns.Signal.QueueLength())
-  print("Commands: /fnotify test | /fnotify preview | /fnotify <" .. "death|level|pvp|flag|summary> | /fnotify debug")
+  for i, b in ipairs(ns.db.blocked or {}) do
+    if i > 3 then break end
+    print(string.format("  Blocked by the game: %s (%s, %s)", b.func, b.inCombat and "in combat" or "out of combat",
+      date("%H:%M:%S", b.at)))
+  end
+  print("Commands: /fnotify test | /fnotify preview | /fnotify <" .. "death|level|pvp|flag|summary> | /fnotify combatlog"
+    .. " | /fnotify debug")
 end
 
 SLASH_FOREVERNOTIFY1 = "/fnotify"
@@ -101,6 +128,13 @@ SlashCmdList.FOREVERNOTIFY = function(msg)
   elseif cmd == "debug" then
     ns.db.settings.debug = not ns.db.settings.debug
     ns.Print("Debug output " .. OnOff(ns.db.settings.debug))
+  elseif cmd == "combatlog" then
+    ns.db.settings.combatLog = not ns.PvP.CombatLogWanted()
+    ns.PvP.SetupCombatLog()
+    ns.Print("Combat log " .. OnOff(ns.db.settings.combatLog))
+    if ns.db.settings.combatLog then
+      ns.Print("If the game shows a \"blocked from an action\" popup, type /fnotify combatlog again to turn it off.")
+    end
   elseif TOGGLES[cmd] then
     ns.db.settings[cmd] = not ns.db.settings[cmd]
     ns.Print(TOGGLES[cmd] .. " notifications " .. OnOff(ns.db.settings[cmd]))
