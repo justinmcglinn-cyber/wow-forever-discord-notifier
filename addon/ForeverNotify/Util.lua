@@ -187,6 +187,6 @@ function Payload:Serialize(maxBytes)
   return table.concat(out, "\n")
 end
 
-function Payload:Send()
-  ns.Signal.Send(self:Serialize(ns.Signal.MAX_PAYLOAD))
+function Payload:Send(urgent)
+  ns.Signal.Send(self:Serialize(ns.Signal.MAX_PAYLOAD), urgent)
 end

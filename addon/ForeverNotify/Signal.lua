@@ -141,9 +141,10 @@ function Signal.Pump()
   end)
 end
 
-function Signal.Send(payload)
-  queue[#queue + 1] = payload
-  ns.Debug("queued: " .. payload:gsub("\n", " ; "))
+-- urgent payloads (PvP alerts) go ahead of anything already waiting.
+function Signal.Send(payload, urgent)
+  table.insert(queue, urgent and 1 or #queue + 1, payload)
+  ns.Debug((urgent and "queued (urgent): " or "queued: ") .. payload:gsub("\n", " ; "))
   Signal.Pump()
 end
 

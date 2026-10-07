@@ -31,9 +31,16 @@ local function InCombat()
   return ns.call(UnitAffectingCombat, "player") and true or false
 end
 
+-- A player who can attack you right now. Asking the game whether *they* can
+-- attack *you* covers sanctuaries, PvP flags and realm rules for us, so an
+-- unflagged enemy in a neutral town doesn't count. Players of your own faction
+-- can only attack you in a duel (or an FFA arena / mind control), so they're
+-- ignored; if the client hides a faction, the attack check alone decides.
 local function IsHostilePlayer(unit)
   if not ns.call(UnitExists, unit) or not ns.call(UnitIsPlayer, unit) then return false end
-  return (ns.call(UnitCanAttack, "player", unit) or ns.call(UnitIsEnemy, "player", unit)) and true or false
+  if not ns.call(UnitCanAttack, unit, "player") then return false end
+  local theirs, mine = ns.call(UnitFactionGroup, unit), ns.call(UnitFactionGroup, "player")
+  return not (theirs and mine and theirs == mine)
 end
 
 local function IsHostileNPC(unit)
@@ -102,7 +109,7 @@ function PvP.Check()
     reported[a.name] = now
   end
   if #active > MAX_LISTED then p:Set("more", #active - MAX_LISTED) end
-  p:Send()
+  p:Send(true) -- urgent: ahead of any queued signals
 end
 
 -- Most recent attacker: a player seen within KILLER_WINDOW seconds or an NPC
@@ -123,21 +130,44 @@ end
 -- Unit-scan triggers
 ------------------------------------------------------------------------------
 
-ns.On("PLAYER_REGEN_DISABLED", function()
+-- PvP alerts should be as fast as possible, so besides a twice-a-second scan
+-- while in combat, scan the moment something relevant happens: you take a hit,
+-- an enemy's nameplate appears, or a unit changes target. Throttled so bursts of
+-- events cost at most one scan per SCAN_THROTTLE seconds.
+local SCAN_INTERVAL = 0.5
+local SCAN_THROTTLE = 0.1
+local lastScan = -math.huge
+
+local function QuickCheck()
+  local now = GetTime()
+  if now - lastScan < SCAN_THROTTLE then return end
+  lastScan = now
   PvP.Check()
+end
+
+ns.On("PLAYER_REGEN_DISABLED", function()
+  QuickCheck()
   if ticker then ticker:Cancel() end
-  ticker = C_Timer.NewTicker(1, function()
+  ticker = C_Timer.NewTicker(SCAN_INTERVAL, function()
     if not InCombat() then
       ticker:Cancel()
       ticker = nil
       return
     end
-    PvP.Check()
+    QuickCheck()
   end)
 end)
 
 ns.On("UNIT_TARGET", function(unit)
-  if InCombat() and unit and unit ~= "player" then PvP.Check() end
+  if InCombat() and unit and unit ~= "player" then QuickCheck() end
+end)
+
+ns.On("NAME_PLATE_UNIT_ADDED", function()
+  if InCombat() then QuickCheck() end
+end)
+
+ns.On("UNIT_COMBAT", function(unit, action)
+  if unit == "player" and action ~= "HEAL" then QuickCheck() end
 end)
 
 ------------------------------------------------------------------------------

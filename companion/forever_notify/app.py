@@ -25,12 +25,17 @@ CATCH_UP_MAX = 24 * 3600  # older unposted summaries are posted at start-up only
 
 
 class FolderWatcher:
-    """Reports files that appear after start-up once their size stops changing."""
+    """Reports files that appear after start-up, as soon as they have any content.
+
+    A file the game is still writing simply fails to decode; the caller then
+    calls retry_or_drop and it's offered again on the next poll. This is faster
+    than waiting for the size to settle, which matters for PvP alerts.
+    """
 
     def __init__(self, list_files: Callable[[], list[Path]]):
         self._list = list_files
         self._seen = set(self._safe_list())
-        self._pending: dict[Path, tuple[int, float]] = {}
+        self._first_seen: dict[Path, float] = {}
 
     def _safe_list(self) -> list[Path]:
         try:
@@ -47,23 +52,18 @@ class FolderWatcher:
                 size = path.stat().st_size
             except OSError:
                 continue
-            previous = self._pending.get(path)
-            if previous and previous[0] == size and size > 0:
+            self._first_seen.setdefault(path, now)
+            if size > 0:
                 ready.append(path)
-            elif not previous or previous[0] != size:
-                self._pending[path] = (size, previous[1] if previous else now)
         return ready
 
     def done(self, path: Path) -> None:
         self._seen.add(path)
-        self._pending.pop(path, None)
+        self._first_seen.pop(path, None)
 
     def retry_or_drop(self, path: Path, now: float) -> None:
-        size, first = self._pending.get(path, (0, now))
-        if now - first > GIVE_UP_AFTER:
+        if now - self._first_seen.get(path, now) > GIVE_UP_AFTER:
             self.done(path)
-        else:
-            self._pending[path] = (-1, first)  # force a fresh size check next poll
 
 
 class ChangeWatcher:
@@ -246,16 +246,27 @@ def _list_images(folder: Path) -> Callable[[], list[Path]]:
     return list_files
 
 
+def _timing(path: Path) -> str:
+    """How long the game took to save the screenshot and how soon we read it (Windows creation time)."""
+    if sys.platform != "win32":
+        return ""
+    try:
+        st = path.stat()
+    except OSError:
+        return ""
+    return f" (game saved it in {max(0.0, st.st_mtime - st.st_ctime):.2f}s, read {max(0.0, time.time() - st.st_mtime):.2f}s later)"
+
+
 def process_screenshot(path: Path, notifier: Notifier, delete: bool) -> bool:
     """Decode one screenshot. Returns False if it couldn't be read yet."""
     try:
         payload = decode_file(path)
-    except OSError:
+    except (OSError, SyntaxError, ValueError):  # usually still being written: retry next poll
         return False
     if payload is None:
         log.debug("%s is a normal screenshot", path.name)
         return True
-    log.info("Signal %s from %s", payload.get("t"), path.name)
+    log.info("Signal %s from %s%s", payload.get("t"), path.name, _timing(path))
     notifier.handle_signal(payload)
     if delete:
         try:

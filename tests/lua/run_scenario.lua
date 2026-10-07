@@ -149,6 +149,54 @@ check(Has(LastPayload(), "a1=Sneaky|Stormrage||Rogue|Night Elf|"), "combat-log a
 S.inCombat = false
 S.Advance(2)
 
+-- Fast PvP: an attacker appearing mid-fight is alerted on the hit, not the next scan ----
+S.Advance(30)
+S.inCombat = true
+S.Fire("PLAYER_REGEN_DISABLED") -- already fighting a mob
+S.Advance(0.3)
+S.units.nameplate6 = { name = "Ambusher", level = 25, class = "Warrior", race = "Orc", player = true,
+  hostile = true, target = "player" }
+before = #S.screenshots
+S.Fire("UNIT_COMBAT", "player", "WOUND")
+S.Advance(0.15) -- three frames
+check(#S.screenshots == before + 1, "PvP alert screenshot within 0.15s of the hit")
+check(Has(LastPayload(), "a1=Ambusher||25|Warrior|Orc|"), "fast PvP attacker: " .. LastPayload())
+S.inCombat = false
+S.units.nameplate6 = nil
+S.Advance(2)
+
+-- PvP alerts jump the queue ----------------------------------------------------------
+local queued = #payloads
+ns.NewPayload("TEST"):Send()
+ns.NewPayload("LEVEL"):Set("new", 99):Send()
+ns.NewPayload("PVP"):Set("a1", "Queue Jumper"):Send(true)
+S.Advance(3)
+check(Has(payloads[queued + 1] or "", "t=TEST"), "in-flight signal finishes first")
+check(Has(payloads[queued + 2] or "", "t=PVP"), "urgent PvP alert sent next")
+check(Has(payloads[queued + 3] or "", "t=LEVEL"), "queued signal sent after the PvP alert")
+
+-- Only players who can attack you count -----------------------------------------------
+S.units.player.faction = "Horde"
+local function PvPAlertFor(unit)
+  S.Advance(30)
+  S.inCombat = true
+  S.units.nameplate7 = unit
+  local n = #S.screenshots
+  S.Fire("PLAYER_REGEN_DISABLED")
+  S.Advance(1)
+  S.inCombat = false
+  S.units.nameplate7 = nil
+  S.Advance(2)
+  return #S.screenshots > n
+end
+check(not PvPAlertFor({ name = "Tourist", level = 60, player = true, hostile = true, canAttack = false,
+  faction = "Alliance", target = "player" }), "enemy who can't attack you (sanctuary/unflagged) ignored")
+check(not PvPAlertFor({ name = "Duelist", level = 24, player = true, hostile = true, faction = "Horde",
+  target = "player" }), "same-faction attacker (duel) ignored")
+check(PvPAlertFor({ name = "Raider", level = 60, player = true, hostile = true, faction = "Alliance",
+  target = "player" }), "enemy who can attack you alerts")
+S.units.player.faction = nil
+
 -- Combat log toggles --------------------------------------------------------------
 SlashCmdList.FOREVERNOTIFY("combatlog")
 check(not S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "combat log unregistered by /fnotify combatlog")

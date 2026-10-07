@@ -159,7 +159,15 @@ function UnitClass(u) local r = Resolve(u); if r then return r.class, r.classFil
 function UnitRace(u) local r = Resolve(u); return r and r.race end
 function GetGuildInfo(u) local r = Resolve(u); return r and r.guild end
 function UnitIsPlayer(u) local r = Resolve(u); return r and r.player or false end
-function UnitCanAttack(_, u) local r = Resolve(u); return r and r.hostile or false end
+-- Whether a can attack b: a unit's `canAttack` (default: its `hostile`) says if
+-- it and the player can attack each other.
+function UnitCanAttack(a, b)
+  local other = Resolve(a) == S.units.player and Resolve(b) or Resolve(a)
+  if not other then return false end
+  if other.canAttack ~= nil then return other.canAttack end
+  return other.hostile or false
+end
+function UnitFactionGroup(u) local r = Resolve(u); return r and r.faction end
 function UnitIsEnemy(_, u) local r = Resolve(u); return r and r.hostile or false end
 function UnitAffectingCombat() return S.inCombat end
 function UnitHealth(u) local r = Resolve(u); return r and r.health end

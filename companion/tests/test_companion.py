@@ -1,3 +1,4 @@
+import io
 import os
 import tempfile
 import time
@@ -144,17 +145,39 @@ class ConfigLoading(unittest.TestCase):
 
 
 class Watching(unittest.TestCase):
-    def test_folder_watcher_waits_for_stable_new_files(self):
+    def test_folder_watcher_offers_new_files_at_once_and_retries(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)
             (folder / "old.png").write_bytes(b"x")
             watcher = FolderWatcher(lambda: list(folder.iterdir()))
             new = folder / "new.png"
+            new.write_bytes(b"")
+            self.assertEqual(watcher.poll(0), [])       # nothing written yet
             new.write_bytes(b"abc")
-            self.assertEqual(watcher.poll(0), [])      # first sighting
-            self.assertEqual(watcher.poll(0.5), [new])  # size stable
+            self.assertEqual(watcher.poll(0.2), [new])  # offered as soon as it has content
+            watcher.retry_or_drop(new, 0.2)             # couldn't decode yet (still being written)
+            self.assertEqual(watcher.poll(0.4), [new])  # offered again
             watcher.done(new)
-            self.assertEqual(watcher.poll(1), [])
+            self.assertEqual(watcher.poll(0.6), [])
+            stuck = folder / "stuck.png"
+            stuck.write_bytes(b"abc")
+            watcher.poll(1)
+            watcher.retry_or_drop(stuck, 12)            # gives up after GIVE_UP_AFTER seconds
+            self.assertEqual(watcher.poll(12.2), [])
+
+    def test_half_written_signal_is_retried_not_lost(self):
+        with tempfile.TemporaryDirectory() as d:
+            sent = []
+            cfg = config.Config(webhook_url="https://x", screenshots_dir=Path(d), saved_variables_glob="")
+            notifier = Notifier(cfg, lambda url, body: sent.append(body))
+            buf = io.BytesIO()
+            encode_image(b"t=PVP\nc=Thrall\nr=Area52\na1=Gankster").save(buf, "PNG")
+            signal = Path(d) / "WoWScrnShot_100626_101500.png"
+            signal.write_bytes(buf.getvalue()[: len(buf.getvalue()) // 2])
+            self.assertFalse(process_screenshot(signal, notifier, delete=True))  # retry later
+            signal.write_bytes(buf.getvalue())
+            self.assertTrue(process_screenshot(signal, notifier, delete=True))
+            self.assertEqual(len(sent), 1)
 
     def test_signal_screenshot_is_posted_and_deleted(self):
         with tempfile.TemporaryDirectory() as d:

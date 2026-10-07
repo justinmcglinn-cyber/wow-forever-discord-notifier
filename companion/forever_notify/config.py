@@ -21,7 +21,7 @@ class Config:
     saved_variables_glob: str
     delete_signal_screenshots: bool = True
     summary_grace_seconds: float = 30
-    poll_seconds: float = 0.5
+    poll_seconds: float = 0.2
     notify: dict[str, bool] = field(default_factory=lambda: {e: True for e in EVENTS})
     webhooks: dict[str, str] = field(default_factory=dict)
     pvp_mention: str = ""
@@ -65,7 +65,7 @@ def load(path: str | Path) -> Config:
         saved_variables_glob=sv_glob,
         delete_signal_screenshots=bool(raw.get("delete_signal_screenshots", True)),
         summary_grace_seconds=float(raw.get("summary_grace_seconds", 30)),
-        poll_seconds=float(raw.get("poll_seconds", 0.5)),
+        poll_seconds=float(raw.get("poll_seconds", 0.2)),
         notify=notify,
         webhooks=webhooks,
         pvp_mention=raw.get("mentions", {}).get("pvp", ""),

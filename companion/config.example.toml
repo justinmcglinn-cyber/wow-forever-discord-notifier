@@ -19,7 +19,7 @@ delete_signal_screenshots = true
 summary_grace_seconds = 30
 
 # How often to check for new screenshots (seconds).
-poll_seconds = 0.5
+poll_seconds = 0.2
 
 [notify]
 death = true
