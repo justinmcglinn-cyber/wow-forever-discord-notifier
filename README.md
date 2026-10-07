@@ -27,11 +27,24 @@ Copy `addon/ForeverNotify` into `<WoW Forever folder>\Interface\AddOns\`. If the
 The add-on switches the screenshot format to PNG on login, because JPEG compression can corrupt the signal grid.
 
 ### 3. Companion (Windows)
+1. Download `ForeverNotify.exe` from the latest [release](../../releases) (or from the **build-exe** artifact of a recent Actions run), or build it yourself (see below).
+2. Put it in its own folder, e.g. `Documents\ForeverNotify`, and double-click it.
+3. The first time, it asks for your webhook URL and your WoW Forever folder (it offers any it finds), saves `config.toml` next to the exe, and posts a test message to Discord.
+4. Leave the window open while you play. Close it to stop.
+
+Windows SmartScreen may warn that the app is unrecognised, because it isn't code-signed. Click **More info → Run anyway**.
+
+Extra options (per-event channels, @mentions…) live in `config.toml`; open it in Notepad and restart the exe after editing. The exe also accepts the same commands as the Python version, e.g. `ForeverNotify.exe test-webhook` or `ForeverNotify.exe -v run`.
+
+<details>
+<summary>Run from source instead</summary>
+
 1. Install Python 3.11+ from python.org (tick "Add to PATH").
 2. In `companion\`, run `py -m pip install -r requirements.txt`.
 3. Copy `config.example.toml` to `config.toml`. Paste your webhook URL and set `wow_dir` to your Forever install folder (the one containing `Screenshots` and `WTF`).
 4. Run `py -m forever_notify test-webhook`. A test message should appear in Discord.
 5. Start the companion with `run.bat`, or `py -m forever_notify run`, and leave it running while you play.
+</details>
 
 ### 4. Check it end to end
 In game, type `/fnotify test`. Within about a second you should get a ✅ message in Discord.
@@ -61,11 +74,14 @@ None of this has been run in the real client yet. On first use:
 1. Run `/fnotify test` and confirm a Discord message arrives and the signal screenshot is deleted.
 2. Run `/fnotify` and note whether "Combat log PvP detection" is on.
 3. Die once, level once and log out once, and check each message.
-4. If anything fails, turn on `/fnotify debug`, run the companion with `py -m forever_notify -v run`, and share the output.
+4. If anything fails, turn on `/fnotify debug`, run the companion with `ForeverNotify.exe -v run` (or `py -m forever_notify -v run`), and share the output.
 
 ## Development
 
 ```
 lua5.1 tests/lua/run_scenario.lua addon/ForeverNotify /tmp/out   # add-on under a stubbed WoW API
 cd companion && python -m unittest discover -s tests -t .           # decoder, formatting, watcher, end-to-end
+companion\build_exe.bat                                            # builds companion\dist\ForeverNotify.exe (PyInstaller)
 ```
+
+Pushing a `v*` tag (e.g. `git tag v0.2 && git push --tags`) makes CI build the exe and publish a release zip containing the exe, the example config and the add-on.
