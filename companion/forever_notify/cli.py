@@ -13,6 +13,7 @@ from . import addon_install, app, config, discord, formatting, setup_wizard
 from .signal_decode import decode_file
 
 FROZEN = getattr(sys, "frozen", False)  # running as ForeverNotify.exe
+BAKED_CONFIG = "baked_config.toml"  # optional personal settings bundled by build_exe.bat
 
 
 def default_config_path() -> Path:
@@ -76,6 +77,11 @@ def main(argv: list[str] | None = None) -> int:
         for path in args.files:
             print(path, json.dumps(decode_file(path), ensure_ascii=False))
         return 0
+
+    baked = setup_wizard.resource_path(BAKED_CONFIG)
+    if not args.config.exists() and args.command != "setup" and baked.is_file():
+        args.config.write_bytes(baked.read_bytes())
+        print(f"No config found; restored the settings built into this exe to {args.config}.")
 
     fresh_setup = False
     wants_setup = args.command == "setup" or (not args.config.exists() and sys.stdin and sys.stdin.isatty())

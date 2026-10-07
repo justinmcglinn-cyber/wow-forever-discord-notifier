@@ -36,6 +36,8 @@ The add-on switches the screenshot format to PNG on login, because JPEG compress
 3. The first time, it asks whether you want one Discord channel for everything or a separate channel per notification type (deaths, level ups, PvP alerts, gold summary), then for the webhook URL(s) and your WoW Forever folder (it offers any it finds). It saves `config.toml` next to the exe and posts a test message to each channel, saying which notifications will land there. Run `ForeverNotify.exe setup` to go through this again later.
 4. Leave the window open while you play. Close it to stop.
 
+**Personal build with your settings built in:** copy your `config.toml` to `companion\baked_config.toml` (git-ignored) and run `build_exe.bat`. That exe restores those settings whenever it starts without a `config.toml`, so it works in any folder or on another PC with no setup. Your webhooks are inside that exe, so don't share it.
+
 Windows SmartScreen may warn that the app is unrecognised, because it isn't code-signed. Click **More info → Run anyway**.
 
 Extra options (per-event channels, @mentions…) live in `config.toml`; open it in Notepad and restart the exe after editing. The exe also accepts the same commands as the Python version, e.g. `ForeverNotify.exe test-webhook` or `ForeverNotify.exe -v run`.
