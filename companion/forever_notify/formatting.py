@@ -110,7 +110,8 @@ def _embed(kind: str, title: str, p: dict[str, Any], description: str = "", fiel
         embed["description"] = description
     if fields:
         embed["fields"] = [{"name": n, "value": v[:1024], "inline": inline} for n, v, inline in fields]
-    embed["footer"] = {"text": _who(p) + (f" · Lv {p['lv']}" if p.get("lv") else "")}
+    late = " · sent late (companion wasn't running)" if p.get("late") else ""
+    embed["footer"] = {"text": _who(p) + (f" · Lv {p['lv']}" if p.get("lv") else "") + late}
     ts = _timestamp(p)
     if ts:
         embed["timestamp"] = ts

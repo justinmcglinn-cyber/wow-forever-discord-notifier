@@ -14,6 +14,10 @@ WoW add-ons can't access the internet, so this has two parts:
 1. **`addon/ForeverNotify`**: when an event happens, the add-on draws a tiny coded colour grid in the top-left corner for a single frame and takes a screenshot.
 2. **`companion/`**: a small Python app on your PC. It watches the Screenshots folder, decodes the grid, posts a text message to your Discord webhook and deletes the signal screenshot. The gold summary is read from the add-on's saved data, which the game writes when you log out.
 
+If the companion wasn't running when a signal was taken, it cleans up at its next start: deaths and level-ups from the last 10 minutes are still posted (marked "sent late"), and older signal screenshots are deleted unposted. Each of your own screenshots is read once and remembered in `screenshot_cache.json`, so later start-ups skip it.
+
+The grid is drawn in physical screen pixels, so resolution, UI scale and window size don't matter: it decodes from 720p to 4K and ultrawide, and in windowed mode.
+
 The companion only reads files the game writes. It never touches the game process and never sends keystrokes. Your own screenshots are never changed or uploaded.
 
 ## Setup

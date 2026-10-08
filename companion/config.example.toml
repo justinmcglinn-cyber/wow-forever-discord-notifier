@@ -13,7 +13,12 @@ wow_dir = 'C:\Program Files (x86)\World of Warcraft\_forever_'
 # saved_variables_glob = 'D:\WoW\_forever_\WTF\Account\*\SavedVariables\ForeverNotify.lua'
 
 # Delete the add-on's signal screenshots after reading them. Your own screenshots are never touched.
+# At start-up, signal screenshots left over from while the companion wasn't running are cleaned up too.
 delete_signal_screenshots = true
+
+# Deaths and level-ups saved this many minutes before the companion started are still posted (marked late).
+# Older leftover signals are deleted without posting.
+catch_up_minutes = 10
 
 # After logout, wait this long before posting the gold summary, in case it was a /reload.
 summary_grace_seconds = 30

@@ -15,6 +15,7 @@ from . import formatting
 from .config import SIGNAL_EVENTS, Config
 from .luasv import LuaParseError, parse_saved_variables
 from .signal_decode import decode_file
+from .sweep import ScreenshotCache, StartupSweep
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ IMAGE_SUFFIXES = {".png", ".tga", ".jpg", ".jpeg"}
 GIVE_UP_AFTER = 10  # seconds to keep retrying a file that won't open
 RECENT_LOGOUT = 90  # a summary saved this many seconds before start-up is handled as if seen live
 CATCH_UP_MAX = 24 * 3600  # older unposted summaries are posted at start-up only if WoW isn't running
+LATE_KINDS = {"DEATH", "LEVEL"}  # still worth posting late; PvP alerts and tests are stale within minutes
+CACHE_SAVE_INTERVAL = 60  # seconds between saves of the screenshot cache while running
 
 
 class FolderWatcher:
@@ -34,7 +37,8 @@ class FolderWatcher:
 
     def __init__(self, list_files: Callable[[], list[Path]]):
         self._list = list_files
-        self._seen = set(self._safe_list())
+        self.initial = self._safe_list()  # already there at start-up: left to the start-up sweep
+        self._seen = set(self.initial)
         self._first_seen: dict[Path, float] = {}
 
     def _safe_list(self) -> list[Path]:
@@ -146,8 +150,8 @@ class Notifier:
     def _char_key(name, realm) -> str:
         return f"{name}-{realm}"
 
-    def handle_signal(self, payload: dict[str, str]) -> None:
-        kind = payload.get("t", "")
+    def _note_activity(self, payload: dict[str, str]) -> str:
+        """Any signal shows the character was in game at its timestamp (e.g. a /reload, not a logout)."""
         key = self._char_key(payload.get("c"), payload.get("r"))
         try:
             ts = int(payload.get("ts") or 0)
@@ -155,6 +159,19 @@ class Notifier:
             ts = 0
         self._last_signal_ts[key] = max(ts, self._last_signal_ts.get(key, 0))
         self._cancel_summary_if_still_playing(key)
+        return key
+
+    def handle_late_signal(self, payload: dict[str, str]) -> None:
+        """A signal saved shortly before start-up: deaths and level-ups are posted, marked as late."""
+        if payload.get("t") in LATE_KINDS:
+            self.handle_signal({**payload, "late": "1"})
+        else:
+            self._note_activity(payload)
+            log.info("Not posting %s from before start-up (only useful live).", payload.get("t") or "?")
+
+    def handle_signal(self, payload: dict[str, str]) -> None:
+        kind = payload.get("t", "")
+        key = self._note_activity(payload)
 
         event = SIGNAL_EVENTS.get(kind)
         if event is None:
@@ -257,7 +274,7 @@ def _timing(path: Path) -> str:
     return f" (game saved it in {max(0.0, st.st_mtime - st.st_ctime):.2f}s, read {max(0.0, time.time() - st.st_mtime):.2f}s later)"
 
 
-def process_screenshot(path: Path, notifier: Notifier, delete: bool) -> bool:
+def process_screenshot(path: Path, notifier: Notifier, delete: bool, cache: ScreenshotCache | None = None) -> bool:
     """Decode one screenshot. Returns False if it couldn't be read yet."""
     try:
         payload = decode_file(path)
@@ -265,6 +282,8 @@ def process_screenshot(path: Path, notifier: Notifier, delete: bool) -> bool:
         return False
     if payload is None:
         log.debug("%s is a normal screenshot", path.name)
+        if cache:
+            cache.add(path)  # so the next start-up sweep doesn't read it again
         return True
     log.info("Signal %s from %s%s", payload.get("t"), path.name, _timing(path))
     notifier.handle_signal(payload)
@@ -309,19 +328,39 @@ def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bo
         except OSError as e:
             log.warning("Could not read %s: %s", path, e)
 
-    while not stop():
-        now = time.time()
-        for path in screenshots.poll(now):
-            if process_screenshot(path, notifier, config.delete_signal_screenshots):
-                screenshots.done(path)
-            else:
-                screenshots.retry_or_drop(path, now)
-        for path in saved_vars.poll():
-            try:
-                text = Path(path).read_text(encoding="utf-8", errors="replace")
-            except OSError as e:
-                log.warning("Could not read %s: %s", path, e)
-                continue
-            notifier.handle_saved_variables(text, now)
-        notifier.tick(now)
-        time.sleep(config.poll_seconds)
+    cache = ScreenshotCache(config.state_file.with_name("screenshot_cache.json") if config.state_file else None)
+    sweep = StartupSweep(screenshots.initial, cache, config.delete_signal_screenshots, config.catch_up_seconds)
+    sweep.start()
+    last_cache_save = time.time()
+
+    try:
+        while not stop():
+            now = time.time()
+            for path, payload in sweep.drain():
+                log.info("Signal %s from %s (saved before start-up)", payload.get("t"), path.name)
+                notifier.handle_late_signal(payload)
+                if config.delete_signal_screenshots:
+                    try:
+                        path.unlink()
+                    except OSError as e:
+                        log.warning("Could not delete %s: %s", path, e)
+            for path in screenshots.poll(now):
+                if process_screenshot(path, notifier, config.delete_signal_screenshots, cache):
+                    screenshots.done(path)
+                else:
+                    screenshots.retry_or_drop(path, now)
+            for path in saved_vars.poll():
+                try:
+                    text = Path(path).read_text(encoding="utf-8", errors="replace")
+                except OSError as e:
+                    log.warning("Could not read %s: %s", path, e)
+                    continue
+                notifier.handle_saved_variables(text, now)
+            notifier.tick(now)
+            if now - last_cache_save >= CACHE_SAVE_INTERVAL:
+                cache.save()
+                last_cache_save = now
+            time.sleep(config.poll_seconds)
+    finally:
+        sweep.stop()
+        cache.save()

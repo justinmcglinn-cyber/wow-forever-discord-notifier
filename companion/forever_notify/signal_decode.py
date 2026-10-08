@@ -40,6 +40,8 @@ def _block_size(px, width: int, height: int) -> float | None:
     y = 1
     if not (_bright(px[0, y]) and _bright(px[1, y])):
         return None
+    # Use every white/black edge in the row (up to COLUMNS - 1): measuring over the whole row keeps
+    # the error tiny at fractional block sizes, where it would otherwise add up across 64 columns.
     edges = []
     state = True
     for x in range(1, min(width, COLUMNS * 64)):
@@ -47,11 +49,11 @@ def _block_size(px, width: int, height: int) -> float | None:
         if b != state:
             edges.append(x)
             state = b
-            if len(edges) == CALIBRATION_EDGES:
+            if len(edges) == COLUMNS - 1:
                 break
     if len(edges) < CALIBRATION_EDGES:
         return None
-    size = edges[-1] / CALIBRATION_EDGES
+    size = edges[-1] / len(edges)
     if not 2 <= size <= 64:
         return None
     tolerance = max(1.5, size * 0.25)

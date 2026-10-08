@@ -71,6 +71,33 @@ class EndToEnd(unittest.TestCase):
             render(record["blocks"], path, scale=scale, size=(2560, 1440))
             self.assertEqual(decode_file(path), expected, f"scale {scale}")
 
+    def test_decodes_at_common_resolutions(self):
+        # The add-on draws in physical pixels (6px blocks whatever the resolution or UI scale),
+        # so the same blocks land on screens of every size.
+        record = max(self.signals, key=lambda r: len(r["blocks"]))  # the biggest grid
+        expected = parse_payload(record["payload"].encode("utf-8"))
+        width = max(x + w for x, _, w, _, *_ in record["blocks"])
+        height = max(y + h for _, y, _, h, *_ in record["blocks"])
+        self.assertLessEqual((width, height), (384, 150), "grid fits in a corner of even a 720p screen")
+        for size in [(1280, 720), (1366, 768), (1920, 1080), (2560, 1080), (2560, 1440), (3440, 1440),
+                     (3840, 2160), (5120, 1440)]:
+            path = self.tmp / f"res{size[0]}x{size[1]}.png"
+            render(record["blocks"], path, size=size, seed=size[0])
+            self.assertEqual(decode_file(path), expected, f"{size[0]}x{size[1]}")
+
+    def test_decodes_with_soft_edges_at_fractional_block_sizes(self):
+        # e.g. windowed mode where the window and screen sizes differ: blocks become a fractional
+        # number of pixels and smooth scaling blends their edges.
+        record = max(self.signals, key=lambda r: len(r["blocks"]))
+        expected = parse_payload(record["payload"].encode("utf-8"))
+        source = self.tmp / "soft_source.png"
+        render(record["blocks"], source)
+        for factor in (0.4, 0.6, 0.8, 1.37, 1.75, 2.5):  # 2.4px to 15px blocks
+            path = self.tmp / f"soft{factor}.png"
+            with Image.open(source) as image:
+                image.resize((round(1920 * factor), round(1080 * factor)), Image.BILINEAR).save(path)
+            self.assertEqual(decode_file(path), expected, f"x{factor}")
+
     def test_high_quality_jpeg_still_decodes(self):
         record = self.signals[2]  # PvP alert, a large payload
         path = self.tmp / "shot.jpg"

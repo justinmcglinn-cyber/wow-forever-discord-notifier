@@ -27,6 +27,7 @@ class Config:
     pvp_mention: str = ""
     wow_dir: Path | None = None
     state_file: Path | None = None  # remembers posted summaries; None = in memory only
+    catch_up_seconds: float = 600  # signals saved this long before start-up are still posted
 
     def webhook_for(self, event: str) -> str:
         return self.webhooks.get(event) or self.webhook_url
@@ -71,4 +72,5 @@ def load(path: str | Path) -> Config:
         pvp_mention=raw.get("mentions", {}).get("pvp", ""),
         wow_dir=Path(wow_dir) if wow_dir else None,
         state_file=path.parent / "state.json",
+        catch_up_seconds=float(raw.get("catch_up_minutes", 10)) * 60,
     )
