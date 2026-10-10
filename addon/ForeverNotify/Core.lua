@@ -91,14 +91,14 @@ ns.On("ADDON_ACTION_BLOCKED", OnBlocked)
 -- Slash commands
 ------------------------------------------------------------------------------
 
-local TOGGLES = { death = "Death", level = "Level-up", pvp = "PvP attack", flag = "PvP flag", summary = "Logout gold summary" }
+local TOGGLES = { death = "Death", level = "Level-up", pvp = "PvP attack", kill = "PvP kill", flag = "PvP flag", summary = "Logout gold summary" }
 
 local function OnOff(v) return v and "|cff55ff55on|r" or "|cffff5555off|r" end
 
 local function Status()
   local s = ns.db.settings
   ns.Print("Notifications:")
-  for _, key in ipairs({ "death", "level", "pvp", "flag", "summary" }) do
+  for _, key in ipairs({ "death", "level", "pvp", "kill", "flag", "summary" }) do
     print(string.format("  %s (%s): %s", TOGGLES[key], key, OnOff(s[key])))
   end
   print("  Screenshot format: " .. tostring(ns.call(GetCVar, "screenshotFormat")))
@@ -110,7 +110,7 @@ local function Status()
     print(string.format("  Blocked by the game: %s (%s, %s)", b.func, b.inCombat and "in combat" or "out of combat",
       date("%H:%M:%S", b.at)))
   end
-  print("Commands: /fnotify test | /fnotify preview | /fnotify <" .. "death|level|pvp|flag|summary> | /fnotify combatlog"
+  print("Commands: /fnotify test | /fnotify preview | /fnotify <" .. "death|level|pvp|kill|flag|summary> | /fnotify combatlog"
     .. " | /fnotify debug")
 end
 

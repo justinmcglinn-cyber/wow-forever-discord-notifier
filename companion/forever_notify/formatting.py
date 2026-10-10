@@ -9,11 +9,30 @@ COLOURS = {
     "DEATH": 0x8B0000,
     "LEVEL": 0xF1C40F,
     "PVP": 0xE74C3C,
+    "KILL": 0x9B59B6,
     "FLAG": 0xE67E22,
     "TEST": 0x3498DB,
     "SUMMARY_UP": 0x2ECC71,
     "SUMMARY_DOWN": 0x95A5A6,
 }
+
+# (minimum streak, callout), highest first.
+STREAKS = ((20, "LEGENDARY"), (15, "GODLIKE"), (10, "UNSTOPPABLE"), (7, "DOMINATING"), (5, "RAMPAGE"),
+           (3, "KILLING SPREE"))
+MULTI_KILLS = {2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUAD KILL"}
+
+
+def kill_callouts(multi: int, streak: int) -> list[str]:
+    """Big-text lines for a kill: multi-kill first, then the streak tier."""
+    lines = []
+    if multi >= 2:
+        lines.append(f"💥 **{MULTI_KILLS.get(multi, f'MULTI-KILL ×{multi}')}!**")
+    for minimum, name in STREAKS:
+        if streak >= minimum:
+            lines.append(f"🔥 **{name}** — {streak} kills without dying")
+            break
+    return lines
+
 
 ZONE_TYPES = {
     "contested": "Contested",
@@ -153,6 +172,26 @@ def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
             fields.append(("Hostile players nearby", p["near"], True))
         embed = _embed(kind, f"⚔️ {name} is under attack!", p, fields=fields)
         content = pvp_mention
+    elif kind == "KILL":
+        victim = p.get("v", "")
+        victim_name = victim.split("|")[0] if victim else ""
+        title = f"🗡️ {name} killed {victim_name}" if victim_name else f"🗡️ {name} scored an honorable kill"
+        try:
+            multi, streak = int(p.get("multi") or 1), int(p.get("streak") or 1)
+        except ValueError:
+            multi, streak = 1, 1
+        fields = []
+        if "|" in victim:
+            fields.append(("Victim", unit(victim), False))
+        if p.get("vr"):
+            fields.append(("PvP rank", p["vr"], True))
+        if p.get("hon"):
+            fields.append(("Honor", f"+{p['hon']}", True))
+        fields.append(("Streak", str(streak), True))
+        fields.append(("Location", location(p), False))
+        if p.get("hp"):
+            fields.append(("Your health", f"{p['hp']}%", True))
+        embed = _embed(kind, title, p, "\n".join(kill_callouts(multi, streak)), fields)
     elif kind == "FLAG":
         state = "now flagged for PvP" if p.get("on") == "1" else "no longer flagged for PvP"
         embed = _embed(kind, f"🚩 {name} is {state}", p, fields=[("Location", location(p), False)])
@@ -231,6 +270,8 @@ def sample_messages(p: dict[str, str], pvp_mention: str = "") -> dict[str, dict]
         "level": format_signal({**base, "t": "LEVEL", "new": str(level + 1), "prev": "4500", "sess": "5400"}),
         "pvp": format_signal({**base, "t": "PVP", "a1": "Gankster|Stormrage|60|Rogue|Undead|Shadow Council",
                               "hp": "45", "near": "2"}, pvp_mention),
+        "kill": format_signal({**base, "t": "KILL", "v": "Lightbringer|Stormrage|26|Paladin|Human|Silver Hand",
+                               "vr": "Knight", "hon": "45", "streak": "5", "multi": "3", "hp": "38"}),
         "summary": format_summary({
             "char": base["c"], "realm": base["r"], "start": stop - 5400, "stop": stop,
             "startMoney": 80130, "endMoney": 97300, "startLevel": level, "endLevel": level + 1,

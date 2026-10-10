@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 from . import addon_install, app, config, discord, formatting, setup_wizard
@@ -35,6 +36,45 @@ def send_tests(cfg: config.Config) -> bool:
     return ok
 
 
+def set_webhook(config_path: Path, channel: str, url: str | None, ask=input) -> int:
+    """Change one channel's webhook in config.toml and post a sample there to prove it works."""
+    label = dict(setup_wizard.CHANNELS)[channel]
+    if url is None:
+        print(f"New webhook for {label}.")
+        try:
+            url = setup_wizard.ask_webhook_url(ask)
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled; config.toml not changed.", file=sys.stderr)
+            return 2
+    url = url.strip().strip('"')
+    if not url.startswith(setup_wizard.WEBHOOK_PREFIXES):
+        print("That doesn't look like a Discord webhook URL (it should start with https://discord.com/api/webhooks/).",
+              file=sys.stderr)
+        return 2
+
+    text = config_path.read_text(encoding="utf-8-sig")
+    for event in (channel, "flag") if channel == "pvp" else (channel,):  # PvP flag alerts share the PvP channel
+        text = setup_wizard.set_webhook(text, event, url)
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        print(f"Not saved, the result wouldn't load: {e}", file=sys.stderr)
+        return 2
+    config_path.write_text(text, encoding="utf-8")
+    print(f"Saved the {label} webhook to {config_path}.")
+
+    cfg = config.load(config_path)
+    sample = formatting.sample_messages({"c": "Companion", "r": "PC", "ts": str(int(time.time()))},
+                                        cfg.pvp_mention)[channel]
+    try:
+        discord.post(cfg.webhook_for(channel), sample)
+    except RuntimeError as e:
+        print(f"Saved, but the sample message didn't reach Discord: {e}", file=sys.stderr)
+        return 1
+    print(f"Sent a sample {label} message; check that channel. Restart ForeverNotify if it's running.")
+    return 0
+
+
 def confirm(prompt: str) -> bool:
     try:
         return input(prompt).strip().lower() in ("y", "yes")
@@ -56,6 +96,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("setup", help="run the setup questions again (rewrites config.toml), then start")
     sub.add_parser("install-addon", help="reinstall the add-on in your WoW Interface\\AddOns folder, even if it's newer "
                    "(run does this automatically when needed)")
+    hook_p = sub.add_parser("set-webhook", help="change one channel's webhook in config.toml, then post a sample there")
+    hook_p.add_argument("channel", choices=[event for event, _ in setup_wizard.CHANNELS])
+    hook_p.add_argument("url", nargs="?", help="webhook URL (asked for if left out)")
     decode_p = sub.add_parser("decode", help="decode signal screenshots and print their payloads")
     decode_p.add_argument("files", nargs="+")
     args = parser.parse_args(argv)
@@ -92,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     except config.ConfigError as e:
         print(f"Config error: {e}", file=sys.stderr)
         return 2
+
+    if args.command == "set-webhook":
+        return set_webhook(args.config, args.channel, args.url)
 
     wow_dir = cfg.wow_dir or cfg.screenshots_dir.parent
     if args.command == "install-addon":

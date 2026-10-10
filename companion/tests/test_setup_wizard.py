@@ -5,7 +5,9 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from forever_notify import addon_install, config, setup_wizard
+from unittest import mock
+
+from forever_notify import addon_install, cli, config, setup_wizard
 
 WEBHOOK = "https://discord.com/api/webhooks/123/abc"
 
@@ -35,18 +37,19 @@ class SetupWizard(unittest.TestCase):
         self.assertTrue(cfg.notify["pvp"])
 
     def test_separate_channels(self):
-        gold, deaths, level, pvp = (f"{WEBHOOK}/{n}" for n in ("gold", "deaths", "level", "pvp"))
-        cfg = self.run_wizard(["2", deaths, level, pvp, gold, "1"], [self.wow])
+        gold, deaths, level, pvp, kills = (f"{WEBHOOK}/{n}" for n in ("gold", "deaths", "level", "pvp", "kills"))
+        cfg = self.run_wizard(["2", deaths, level, pvp, kills, gold, "1"], [self.wow])
         self.assertEqual(cfg.webhook_url, deaths)
-        for event, url in [("death", deaths), ("level", level), ("pvp", pvp), ("flag", pvp), ("summary", gold)]:
+        for event, url in [("death", deaths), ("level", level), ("pvp", pvp), ("flag", pvp), ("kill", kills),
+                           ("summary", gold)]:
             self.assertEqual(cfg.webhook_for(event), url, event)
 
     def test_separate_channels_enter_reuses_previous(self):
         other = WEBHOOK + "/other"
-        cfg = self.run_wizard(["2", WEBHOOK, "", other, "", "1"], [self.wow])
+        cfg = self.run_wizard(["2", WEBHOOK, "", other, "", "", "1"], [self.wow])
         self.assertEqual(cfg.webhook_for("level"), WEBHOOK)
         self.assertEqual(cfg.webhook_for("summary"), other)
-        self.assertEqual(cfg.webhooks, {"pvp": other, "summary": other, "flag": other})
+        self.assertEqual(cfg.webhooks, {"pvp": other, "kill": other, "summary": other, "flag": other})
 
     def test_pasted_path_with_quotes_and_apostrophe(self):
         odd = self.tmp / "Bob's Games" / "_forever_"
@@ -107,6 +110,62 @@ class AddonInstall(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             addon_install.install(self.wow, source=missing_source)
         self.assertEqual(addon_install.status(self.wow, source=missing_source), "unknown")
+
+
+EXAMPLE = (Path(__file__).resolve().parents[1] / "config.example.toml").read_text(encoding="utf-8")
+
+
+WOW = r"C:\WoW"
+
+
+class SetWebhook(unittest.TestCase):
+    def write_config(self, webhooks=None):
+        path = Path(tempfile.mkdtemp()) / "config.toml"
+        path.write_text(setup_wizard.render_config(EXAMPLE, WEBHOOK, WOW, webhooks), encoding="utf-8")
+        return path
+
+    def test_adds_new_channel_keeping_comments_and_others(self):
+        text = setup_wizard.render_config(EXAMPLE, WEBHOOK, WOW, {"pvp": WEBHOOK + "/pvp"})
+        out = setup_wizard.set_webhook(text, "kill", WEBHOOK + "/kills")
+        self.assertEqual(out.replace("kill = '" + WEBHOOK + "/kills'\n", ""), text)  # only that line added
+        path = Path(tempfile.mkdtemp()) / "config.toml"
+        path.write_text(out, encoding="utf-8")
+        cfg = config.load(path)
+        self.assertEqual(cfg.webhook_for("kill"), WEBHOOK + "/kills")
+        self.assertEqual(cfg.webhook_for("pvp"), WEBHOOK + "/pvp")
+
+    def test_replaces_existing_line(self):
+        text = setup_wizard.render_config(EXAMPLE, WEBHOOK, WOW, {"kill": WEBHOOK + "/old"})
+        out = setup_wizard.set_webhook(text, "kill", WEBHOOK + "/new")
+        self.assertNotIn("/old", out)
+        self.assertEqual(out.count("kill = '"), 1)
+
+    def test_creates_section_if_missing(self):
+        out = setup_wizard.set_webhook("webhook_url = 'x'\nwow_dir = 'y'\n", "kill", WEBHOOK)
+        self.assertIn("[webhooks]\nkill = '" + WEBHOOK + "'", out)
+
+    def test_command_saves_and_posts_sample_to_that_channel(self):
+        path = self.write_config()
+        with mock.patch.object(cli.discord, "post") as post, redirect_stdout(io.StringIO()):
+            code = cli.set_webhook(path, "pvp", None, ask=lambda _: WEBHOOK + "/pvp")
+        self.assertEqual(code, 0)
+        cfg = config.load(path)
+        self.assertEqual(cfg.webhook_for("pvp"), WEBHOOK + "/pvp")
+        self.assertEqual(cfg.webhook_for("flag"), WEBHOOK + "/pvp")  # flag alerts follow the PvP channel
+        self.assertEqual(cfg.webhook_for("death"), WEBHOOK)
+        url, body = post.call_args.args
+        self.assertEqual(url, WEBHOOK + "/pvp")
+        self.assertIn("under attack", body["embeds"][0]["title"])
+
+    def test_command_rejects_bad_url_without_saving(self):
+        path = self.write_config()
+        before = path.read_text(encoding="utf-8")
+        with mock.patch.object(cli.discord, "post") as post, redirect_stdout(io.StringIO()), \
+                mock.patch("sys.stderr", io.StringIO()):
+            code = cli.set_webhook(path, "kill", "https://example.com/not-a-webhook")
+        self.assertEqual(code, 2)
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
+        post.assert_not_called()
 
 
 if __name__ == "__main__":

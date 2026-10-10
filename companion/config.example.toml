@@ -30,6 +30,7 @@ poll_seconds = 0.2
 death = true
 level = true
 pvp = true
+kill = true      # honourable kills of enemy-faction players
 flag = true      # only sent if also enabled in game with /fnotify flag
 summary = true
 test = true
@@ -41,4 +42,5 @@ pvp = ""
 [webhooks]
 # Optional per-event webhooks (e.g. a separate #pvp channel). Unlisted events use webhook_url.
 # pvp = "https://discord.com/api/webhooks/..."
+# kill = "https://discord.com/api/webhooks/..."
 # summary = "https://discord.com/api/webhooks/..."

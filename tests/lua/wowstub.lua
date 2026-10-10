@@ -169,12 +169,18 @@ function UnitCanAttack(a, b)
 end
 function UnitFactionGroup(u) local r = Resolve(u); return r and r.faction end
 function UnitIsEnemy(_, u) local r = Resolve(u); return r and r.hostile or false end
+function UnitIsDeadOrGhost(u) local r = Resolve(u); return r and r.dead or false end
 function UnitAffectingCombat() return S.inCombat end
 function UnitHealth(u) local r = Resolve(u); return r and r.health end
 function UnitHealthMax(u) local r = Resolve(u); return r and r.maxHealth end
 function UnitGUID(u) local r = Resolve(u); return r and r.guid end
 function UnitIsPVP(u) local r = Resolve(u); return r and r.pvp or false end
 function GetPlayerInfoByGUID(guid) local i = S.guidInfo[guid]; if i then return unpack(i) end end
+
+S.pvpSessionKills = 0
+function GetPVPSessionStats() return S.pvpSessionKills, 0 end
+COMBATLOG_HONORGAIN = "%s dies, honorable kill Rank: %s (Estimated Honor Points: %d)"
+COMBATLOG_HONORGAIN_NO_RANK = "%s dies, honorable kill (Estimated Honor Points: %d)"
 
 function GetMoney() return S.money end
 function GetRealZoneText() return S.zone end

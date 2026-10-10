@@ -6,8 +6,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-EVENTS = ("death", "level", "pvp", "flag", "summary", "test")
-SIGNAL_EVENTS = {"DEATH": "death", "LEVEL": "level", "PVP": "pvp", "FLAG": "flag", "TEST": "test"}
+EVENTS = ("death", "level", "pvp", "kill", "flag", "summary", "test")
+SIGNAL_EVENTS = {"DEATH": "death", "LEVEL": "level", "PVP": "pvp", "KILL": "kill", "FLAG": "flag", "TEST": "test"}
 
 
 class ConfigError(ValueError):

@@ -107,6 +107,34 @@ class Formatting(unittest.TestCase):
         npc = formatting.format_signal({"t": "DEATH", "c": "Thrall", "k": "Hillsbrad Farmer", "kpvp": "0"})
         self.assertEqual(npc["embeds"][0]["description"], "Killed by **Hillsbrad Farmer**")
 
+    def test_kill_message(self):
+        body = formatting.format_signal({
+            "t": "KILL", "c": "Frostbolt", "r": "Realm", "v": "Victim|Stormrage|26|Priest|Human|Light",
+            "vr": "Private", "hon": "45", "streak": "5", "multi": "2", "zone": "Wetlands", "hp": "40"})
+        embed = body["embeds"][0]
+        self.assertEqual(embed["title"], "🗡️ Frostbolt killed Victim")
+        self.assertIn("DOUBLE KILL", embed["description"])
+        self.assertIn("RAMPAGE", embed["description"])
+        fields = {f["name"]: f["value"] for f in embed["fields"]}
+        self.assertEqual(fields["Victim"], "**Victim**-Stormrage (Lv 26 Human Priest) <Light>")
+        self.assertEqual((fields["PvP rank"], fields["Honor"], fields["Streak"]), ("Private", "+45", "5"))
+
+    def test_unnamed_kill_and_plain_name(self):
+        unnamed = formatting.format_signal({"t": "KILL", "c": "Frostbolt", "streak": "1", "multi": "1"})["embeds"][0]
+        self.assertEqual(unnamed["title"], "🗡️ Frostbolt scored an honorable kill")
+        self.assertNotIn("description", unnamed)  # no callouts for a single first kill
+        plain = formatting.format_signal({"t": "KILL", "c": "Frostbolt", "v": "Other"})["embeds"][0]
+        self.assertEqual(plain["title"], "🗡️ Frostbolt killed Other")
+        self.assertNotIn("Victim", [f["name"] for f in plain["fields"]])
+
+    def test_kill_callouts(self):
+        self.assertEqual(formatting.kill_callouts(1, 2), [])
+        self.assertEqual(formatting.kill_callouts(1, 3), ["🔥 **KILLING SPREE** — 3 kills without dying"])
+        self.assertEqual(formatting.kill_callouts(3, 10)[0], "💥 **TRIPLE KILL!**")
+        self.assertIn("UNSTOPPABLE", formatting.kill_callouts(3, 10)[1])
+        self.assertEqual(formatting.kill_callouts(6, 1), ["💥 **MULTI-KILL ×6!**"])
+        self.assertIn("LEGENDARY", formatting.kill_callouts(1, 25)[0])
+
     def test_internal_signals_not_posted(self):
         self.assertIsNone(formatting.format_signal({"t": "RELOAD"}))
 
@@ -205,6 +233,7 @@ class Watching(unittest.TestCase):
 
 
 WEBHOOKS = {"level": "https://hook/level", "pvp": "https://hook/pvp", "flag": "https://hook/pvp",
+            "kill": "https://hook/kills",
             "summary": "https://hook/gold"}
 
 
@@ -217,7 +246,7 @@ class TestMessages(unittest.TestCase):
     def test_samples_cover_every_channel_and_are_marked(self):
         samples = formatting.sample_messages({"c": "Frostbolt", "r": "Realm", "lv": "24", "zone": "Wetlands"},
                                              pvp_mention="<@1>")
-        self.assertEqual(set(samples), {"death", "level", "pvp", "summary"})
+        self.assertEqual(set(samples), {"death", "level", "pvp", "kill", "summary"})
         for body in samples.values():
             self.assertTrue(body["embeds"][0]["title"].startswith("🧪 TEST · "))
             self.assertIn("Test message", body["embeds"][0]["description"])
@@ -229,9 +258,10 @@ class TestMessages(unittest.TestCase):
         Notifier(multi_channel_config(), lambda url, body: sent.append((url, body["embeds"][0]["title"]))) \
             .handle_signal({"t": "TEST", "c": "Frostbolt", "r": "Realm", "ts": "1791373687"})
         urls = [url for url, _ in sent]
-        self.assertEqual(urls, ["https://hook/deaths", "https://hook/level", "https://hook/pvp", "https://hook/gold"])
+        self.assertEqual(urls, ["https://hook/deaths", "https://hook/level", "https://hook/pvp", "https://hook/kills",
+                                "https://hook/gold"])
         self.assertIn("died", sent[0][1])
-        self.assertIn("gold summary", sent[3][1])
+        self.assertIn("gold summary", sent[4][1])
 
 
 def saved_vars(stop, summary_id="Frostbolt-Realm:1000"):

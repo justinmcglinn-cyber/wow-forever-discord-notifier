@@ -13,7 +13,7 @@ from . import addon_install
 WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/",
                     "https://ptb.discord.com/api/webhooks/", "https://canary.discord.com/api/webhooks/")
 # (config key, label) for each channel the wizard asks about; PvP flag alerts follow pvp.
-CHANNELS = (("death", "Deaths"), ("level", "Level ups"), ("pvp", "PvP alerts"), ("summary", "Gold summary (on logout)"))
+CHANNELS = (("death", "Deaths"), ("level", "Level ups"), ("pvp", "PvP alerts"), ("kill", "PvP kills"), ("summary", "Gold summary (on logout)"))
 WOW_PARENTS = (r"Program Files (x86)\World of Warcraft", r"Program Files\World of Warcraft",
                r"World of Warcraft", r"Games\World of Warcraft", r"Battle.net\World of Warcraft")
 
@@ -53,6 +53,26 @@ def render_config(template: str, webhook_url: str, wow_dir: str, webhooks: dict[
         entries = "".join(f"{event} = {toml_string(url)}\n" for event, url in webhooks.items())
         text = re.sub(r'(?m)^\[webhooks\]\n(?:#.*\n)*', lambda m: m.group(0) + entries, text, count=1)
     return text
+
+
+def set_webhook(text: str, event: str, url: str) -> str:
+    """Set one per-event webhook in config.toml text, keeping everything else (comments included)."""
+    line = f"{event} = {toml_string(url)}"
+    section = re.search(r'(?ms)^\[webhooks\][^\n]*\n(.*?)(?=^\[|\Z)', text)
+    if section is None:
+        return text.rstrip("\n") + f"\n\n[webhooks]\n{line}\n"
+    body = section.group(1)
+    existing = re.compile(rf'(?m)^{re.escape(event)}\s*=.*$')
+    if existing.search(body):
+        body = existing.sub(lambda _: line, body, count=1)
+    else:
+        comments = re.match(r'(?:#.*\n)*', body).end()  # after the section's leading comments
+        body = body[:comments] + line + "\n" + body[comments:]
+    return text[:section.start(1)] + body + text[section.end(1):]
+
+
+def ask_webhook_url(ask: Callable[[str], str] = input) -> str:
+    return _ask_url(ask, "Paste the webhook URL (right-click to paste): ")
 
 
 def _ask_url(ask: Callable[[str], str], prompt: str, default: str = "") -> str:

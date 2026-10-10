@@ -48,18 +48,57 @@ local function IsHostileNPC(unit)
   return ns.call(UnitCanAttack, "player", unit) and true or false
 end
 
+-- An enemy-faction player who is dead or a ghost (a dead player can't attack,
+-- so IsHostilePlayer rejects them; this is for naming kill victims).
+local function IsDeadEnemyPlayer(unit)
+  if not ns.call(UnitExists, unit) or not ns.call(UnitIsPlayer, unit) then return false end
+  if not ns.call(UnitIsDeadOrGhost, unit) then return false end
+  local theirs, mine = ns.call(UnitFactionGroup, unit), ns.call(UnitFactionGroup, "player")
+  if theirs and mine then return theirs ~= mine end
+  return ns.call(UnitIsEnemy, "player", unit) and true or false
+end
+
+local SEEN_TTL = 60
+local seen = {}             -- name -> { summary, at, deadAt }: hostile players seen, for naming kill victims
+
+-- Details of a hostile player seen in the last SEEN_TTL seconds, if any.
+function PvP.RecentlySeen(name)
+  local s = name and seen[name]
+  if s and GetTime() - s.at <= SEEN_TTL then return s.summary end
+end
+
+-- Enemy players seen dead in the last `window` seconds, newest first: { name, summary, deadAt }.
+function PvP.RecentlyDead(window)
+  local now, list = GetTime(), {}
+  for name, s in pairs(seen) do
+    if s.deadAt and now - s.deadAt <= window then
+      list[#list + 1] = { name = name, summary = s.summary, deadAt = s.deadAt }
+    end
+  end
+  table.sort(list, function(a, b) return a.deadAt > b.deadAt end)
+  return list
+end
+
 -- Records hostile players (and, for naming killers without the combat log,
--- hostile NPCs) that are targeting you. Returns the number of hostile players
--- with visible nameplates.
+-- hostile NPCs) that are targeting you, and remembers every hostile player seen.
+-- Returns the number of hostile players with visible nameplates.
 local function ScanUnits()
   local units = { "target", "focus", "mouseover", "softenemy" }
   for i = 1, 40 do units[#units + 1] = "nameplate" .. i end
   local hostiles = 0
   local now = GetTime()
   for _, unit in ipairs(units) do
-    if IsHostilePlayer(unit) then
+    if IsDeadEnemyPlayer(unit) then -- checked first: a corpse is never an attacker
+      local name = ns.call(UnitName, unit)
+      if name then
+        local s = seen[name] or { summary = ns.UnitSummary(unit) }
+        s.at, s.deadAt = now, s.deadAt or now -- first time seen dead
+        seen[name] = s
+      end
+    elseif IsHostilePlayer(unit) then
       local name = ns.call(UnitName, unit)
       if unit:find("^nameplate") then hostiles = hostiles + 1 end
+      if name then seen[name] = { summary = ns.UnitSummary(unit), at = now } end
       if name and ns.call(UnitIsUnit, unit .. "target", "player") then
         attackers[name] = { name = name, summary = ns.UnitSummary(unit), lastSeen = now, source = "unit" }
       end

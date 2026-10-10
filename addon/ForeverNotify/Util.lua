@@ -6,6 +6,7 @@ ns.DEFAULT_SETTINGS = {
   death = true,
   level = true,
   pvp = true,
+  kill = true,      -- honourable kills of enemy players
   flag = false,     -- PvP flag on/off notifications (noisy in contested zones)
   summary = true,
   pvpCooldown = 10, -- minimum seconds between PvP alerts

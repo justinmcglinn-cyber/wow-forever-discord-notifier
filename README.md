@@ -5,6 +5,7 @@ Sends World of Warcraft: Forever events to a Discord channel as text messages:
 - 💀 **Death**: where you died, and who killed you (player or NPC) when known
 - ⬆️ **Level up**: new level, location, time spent on the previous level
 - ⚔️ **PvP attack**: your location (zone, subzone, coordinates, zone type), attacker name, level, race, class and guild, your health, and the number of hostile players nearby
+- 🗡️ **PvP kill**: each enemy-faction player you get an honorable kill on, with their level, class, race, guild and PvP rank (when they were your target or had a nameplate), honor earned, your kill streak since your last death, and DOUBLE / TRIPLE / MULTI-KILL and KILLING SPREE → LEGENDARY callouts
 - 💰 **Logout gold summary**: session length, net gold change and gold/hour, income and spending by source (loot, quests, vendor, AH, mail…), deaths, levels gained, and total gold across all your characters
 
 ## How it works
@@ -37,7 +38,7 @@ The add-on switches the screenshot format to PNG on login, because JPEG compress
 ### 3. Companion (Windows)
 1. Download `ForeverNotify.exe` from the latest [release](../../releases) (or from the **build-exe** artifact of a recent Actions run), or build it yourself (see below).
 2. Put it in its own folder, e.g. `Documents\ForeverNotify`, and double-click it.
-3. The first time, it asks whether you want one Discord channel for everything or a separate channel per notification type (deaths, level ups, PvP alerts, gold summary), then for the webhook URL(s) and your WoW Forever folder (it offers any it finds). It saves `config.toml` next to the exe and posts a test message to each channel, saying which notifications will land there. Run `ForeverNotify.exe setup` to go through this again later.
+3. The first time, it asks whether you want one Discord channel for everything or a separate channel per notification type (deaths, level ups, PvP alerts, gold summary), then for the webhook URL(s) and your WoW Forever folder (it offers any it finds). It saves `config.toml` next to the exe and posts a test message to each channel, saying which notifications will land there. Run `ForeverNotify.exe setup` to go through this again later. To change just one channel's webhook, run `ForeverNotify.exe set-webhook <channel>` (`death`, `level`, `pvp`, `kill` or `summary`): it asks for the URL, updates only that line in `config.toml` and posts a sample to that channel.
 4. Leave the window open while you play. Close it to stop.
 
 **Personal build with your settings built in:** copy your `config.toml` to `companion\baked_config.toml` (git-ignored) and run `build_exe.bat`. That exe restores those settings whenever it starts without a `config.toml`, so it works in any folder or on another PC with no setup. Your webhooks are inside that exe, so don't share it.
@@ -65,7 +66,7 @@ In game, type `/fnotify test`. Within a few seconds each channel should get a sa
 |---|---|
 | `/fnotify` | Show status and which notifications are on |
 | `/fnotify test` | Send a sample of every notification, each to its channel |
-| `/fnotify death` / `level` / `pvp` / `summary` / `flag` | Toggle that notification (`flag` = PvP flag on/off, off by default) |
+| `/fnotify death` / `level` / `pvp` / `kill` / `summary` / `flag` | Toggle that notification (`flag` = PvP flag on/off, off by default) |
 | `/fnotify combatlog` | Turn combat-log reading on/off (off by default on Forever, which forbids it) |
 | `/fnotify preview` | Show the signal grid for 5 seconds without taking a screenshot |
 | `/fnotify debug` | Toggle debug output in chat |
@@ -77,6 +78,7 @@ Companion options live in `config.toml`: per-event on/off, separate webhooks per
 - **Forever uses Midnight's add-on restrictions ("secret values").** The add-on checks every value before using it, so restricted values are skipped rather than causing errors. During boss encounters and Mythic+, some details (e.g. health) may be missing.
 - **No combat log on Forever.** The client forbids add-ons from reading the combat log (trying shows a "blocked from an action only available to the Blizzard UI" popup), so the add-on leaves it off on clients with secret values. Attackers and killers are found from your target, focus, mouseover and nameplates instead: an enemy (player or NPC) has to be visible there and targeting you. For PvP alerts the player must also be able to attack you right now (so unflagged enemies in sanctuaries or neutral towns don't count), and players of your own faction are ignored (duels never alert). Keep enemy nameplates on for the best results. A stealthed attacker you never see shows up only once visible, and a death may say "Cause unknown" if the killer was never visible.
 - **Blocked calls are reported.** If the game ever blocks the add-on, a red chat line names the function and `/fnotify` lists recent ones.
+- **Kills are honorable kills**, from the honour system's chat message: you get one for every enemy player you helped kill, not only killing blows (the combat log that would show those is blocked). If that message is hidden, the kill is still posted from the honorable-kill counter, without the victim's name.
 - **The gold summary is posted about 30 seconds after logout.** The delay lets the companion tell a real logout from a `/reload`. If the game crashes, the session isn't saved and no summary is sent. If the companion wasn't running when you logged out, it posts that summary the next time it starts while WoW is closed (it remembers what it has posted in `state.json`, so nothing is sent twice).
 
 ## First beta session checklist

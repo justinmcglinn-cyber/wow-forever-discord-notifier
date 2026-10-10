@@ -207,6 +207,68 @@ ForeverNotifyDB.settings.combatLog = nil -- auto: off on clients with secret val
 ns.PvP.SetupCombatLog()
 check(not S.Registered("COMBAT_LOG_EVENT_UNFILTERED"), "auto leaves combat log off on Midnight-era clients")
 
+-- PvP kills ----------------------------------------------------------------------
+S.Advance(30)
+S.inCombat = true
+S.units.player.faction = "Horde"
+S.units.nameplate8 = { name = "Victim", realm = "Stormrage", level = 26, class = "Priest", race = "Human",
+  guild = "Light", player = true, hostile = true, faction = "Alliance" }
+S.Fire("PLAYER_REGEN_DISABLED")
+S.Advance(0.6)              -- the scan sees the victim
+S.units.nameplate8 = nil    -- dead: nameplate gone
+before = #S.screenshots
+S.Fire("CHAT_MSG_COMBAT_HONOR_GAIN", "Victim dies, honorable kill Rank: Private (Estimated Honor Points: 45)")
+S.pvpSessionKills = 1
+S.Fire("PLAYER_PVP_KILLS_CHANGED")
+S.Advance(2)
+check(#S.screenshots == before + 1, "one kill report (chat message and counter not doubled)")
+local kill = LastPayload()
+check(Has(kill, "t=KILL"), "kill payload type")
+check(Has(kill, "v=Victim|Stormrage|26|Priest|Human|Light"), "victim details from the scan: " .. kill)
+check(Has(kill, "vr=Private") and Has(kill, "hon=45"), "victim rank and honour")
+check(Has(kill, "streak=1") and Has(kill, "multi=1"), "first kill of the streak")
+
+S.Fire("CHAT_MSG_COMBAT_HONOR_GAIN", "Other-Realm dies, honorable kill (Estimated Honor Points: 30)")
+S.pvpSessionKills = 2
+S.Fire("PLAYER_PVP_KILLS_CHANGED")
+S.Advance(2)
+kill = LastPayload()
+check(Has(kill, "v=Other") and not kill:find("vr="), "unranked victim, realm stripped: " .. kill)
+check(Has(kill, "multi=2") and Has(kill, "streak=2"), "double kill within 10s")
+
+S.Advance(20)
+S.pvpSessionKills = 3       -- chat message hidden: only the counter changes
+S.Fire("PLAYER_PVP_KILLS_CHANGED")
+S.Advance(2)
+kill = LastPayload()
+check(Has(kill, "t=KILL") and not kill:find("\nv="), "unnamed kill from the counter: " .. kill)
+check(Has(kill, "streak=3") and Has(kill, "multi=1"), "streak continues, multi-kill window passed")
+check(ForeverNotifyDB.killDebug.messages[1].parsed and ForeverNotifyDB.killDebug.counterEvents == 3,
+  "honour messages and counter events recorded for diagnosis")
+
+S.Advance(20)                -- counter-only kill, victim's corpse still targeted
+S.units.target = { name = "Corpse", realm = "Stormrage", level = 27, class = "Mage", race = "Gnome",
+  player = true, hostile = true, dead = true, faction = "Alliance" }
+S.units.player.faction = "Horde"
+S.pvpSessionKills = 4
+S.Fire("PLAYER_PVP_KILLS_CHANGED")
+S.Advance(2)
+kill = LastPayload()
+check(Has(kill, "v=Corpse|Stormrage|27|Mage|Gnome|"), "counter-only kill named from the dead target: " .. kill)
+S.pvpSessionKills = 5         -- another counter-only kill, same corpse still targeted
+S.Fire("PLAYER_PVP_KILLS_CHANGED")
+S.Advance(2)
+kill = LastPayload()
+check(Has(kill, "streak=5") and not kill:find("\nv="), "a corpse is credited once: " .. kill)
+S.units.target = nil
+
+S.Fire("PLAYER_DEAD")
+S.Advance(1)
+check(ForeverNotifyDB.kills.streak == 0 and ForeverNotifyDB.kills.best == 5, "death ends the streak, best kept")
+S.inCombat = false
+S.units.player.faction = nil
+S.Advance(2)
+
 -- Game blocks one of our calls --------------------------------------------------
 S.Fire("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon", "CastSpellByName()")
 check(ForeverNotifyDB.blocked == nil, "other add-ons' blocked calls ignored")
@@ -253,7 +315,7 @@ check(ForeverNotifyDB.chars["Unknown-Area52"] == nil, "no 'Unknown' character cr
 check(ForeverNotifyDB.lastLogout and ForeverNotifyDB.lastLogout.sessionFound, "logout diagnostic recorded")
 check(summary.startMoney == 100000, "summary start money")
 check(summary.endMoney == S.money, "summary end money")
-check(summary.deaths == 3, "summary deaths")
+check(summary.deaths == 4, "summary deaths")
 check(summary.accountMoney == S.money + 2500000, "account total")
 check(summary.accountChars == 2, "account character count")
 check(summary.startLevel == 23 and summary.endLevel == 24, "summary levels")
