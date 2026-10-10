@@ -24,7 +24,7 @@ class SetupWizard(unittest.TestCase):
         self.installed_to = []
         with redirect_stdout(io.StringIO()):
             setup_wizard.run(path, ask=lambda _: next(answers), candidates=candidates,
-                             install_addon=self.installed_to.append)
+                             install_addon=self.installed_to.append, team_webhooks=False)
         return config.load(path)
 
     def test_one_channel_picks_detected_folder_and_rejects_bad_webhook(self):

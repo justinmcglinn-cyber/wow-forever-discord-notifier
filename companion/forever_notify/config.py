@@ -6,6 +6,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import teamhooks
+
 EVENTS = ("death", "level", "pvp", "kill", "flag", "summary", "test")
 SIGNAL_EVENTS = {"DEATH": "death", "LEVEL": "level", "PVP": "pvp", "KILL": "kill", "FLAG": "flag", "TEST": "test"}
 
@@ -36,7 +38,10 @@ class Config:
         return self.notify.get(event, True)
 
 
-def load(path: str | Path) -> Config:
+_BUILTIN = object()  # default for load(builtin=...): use the exe's team webhooks, if any
+
+
+def load(path: str | Path, builtin=_BUILTIN) -> Config:
     path = Path(path)
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8-sig"))  # -sig: Notepad may add a BOM
@@ -46,6 +51,17 @@ def load(path: str | Path) -> Config:
         raise ConfigError(f"{path}: {e}")
 
     webhook = raw.get("webhook_url", "").strip()
+    webhooks = {k: v for k, v in raw.get("webhooks", {}).items() if v}
+    if not webhook:
+        # No webhook of its own: use the team webhooks built into the exe; any
+        # [webhooks] entries in config.toml still override them per channel.
+        try:
+            team = teamhooks.load_builtin() if builtin is _BUILTIN else builtin
+        except teamhooks.TeamHooksError as e:
+            raise ConfigError(f"Built-in team webhooks unusable ({e}); set webhook_url in {path}")
+        if team:
+            webhook = team[0]
+            webhooks = {**team[1], **webhooks}
     if not webhook.startswith("https://"):
         raise ConfigError("webhook_url must be set to your Discord webhook URL (https://discord.com/api/webhooks/...)")
 
@@ -58,7 +74,6 @@ def load(path: str | Path) -> Config:
 
     notify = {e: True for e in EVENTS}
     notify.update({k: bool(v) for k, v in raw.get("notify", {}).items()})
-    webhooks = {k: v for k, v in raw.get("webhooks", {}).items() if v}
 
     return Config(
         webhook_url=webhook,

@@ -9,8 +9,12 @@ if exist baked_config.toml (
     set BAKED=--add-data "baked_config.toml;."
     echo Including baked_config.toml ^(your webhooks are inside this exe; don't share it^)
 )
+rem Team webhooks: forever_notify\team_data.py (encrypted by make_team_hooks.py, committed) is
+rem used by any config.toml without its own webhook_url, so teammates only pick their WoW folder.
+if exist forever_notify\team_data.py echo Including encrypted team webhooks from forever_notify\team_data.py
 py -3 -m PyInstaller --noconfirm --clean --onefile --console --name ForeverNotify ^
     --add-data "config.example.toml;." --add-data "..\addon\ForeverNotify;addon\ForeverNotify" %BAKED% ^
+    --hidden-import forever_notify.team_data ^
     --exclude-module numpy --exclude-module tkinter ^
     ForeverNotify.py || goto :error
 rem numpy/tkinter: optional Pillow extras we never use; numpy alone adds ~16 MB if it's installed.

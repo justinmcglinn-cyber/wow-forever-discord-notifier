@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from . import addon_install
+from . import addon_install, teamhooks
 
 WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/",
                     "https://ptb.discord.com/api/webhooks/", "https://canary.discord.com/api/webhooks/")
@@ -105,8 +105,8 @@ def _ask_webhooks(ask: Callable[[str], str]) -> tuple[str, dict[str, str]]:
     return urls["death"], {event: url for event, url in urls.items() if url != urls["death"]}
 
 
-def _ask_wow_dir(ask: Callable[[str], str], candidates: list[Path]) -> str:
-    print("\nStep 2 of 2: WoW Forever folder (the one containing Screenshots and WTF)")
+def _ask_wow_dir(ask: Callable[[str], str], candidates: list[Path], step: str = "Step 2 of 2") -> str:
+    print(f"\n{step}: WoW Forever folder (the one containing Screenshots and WTF)")
     for i, path in enumerate(candidates, 1):
         print(f"  {i}. {path}")
     hint = f"Enter 1-{len(candidates)} or paste a folder path: " if candidates else "Paste the folder path: "
@@ -126,13 +126,26 @@ def _ask_wow_dir(ask: Callable[[str], str], candidates: list[Path]) -> str:
 
 
 def run(config_path: Path, ask: Callable[[str], str] = input, candidates: list[Path] | None = None,
-        install_addon: Callable[[Path], bool] = addon_install.install_and_report) -> None:
+        install_addon: Callable[[Path], bool] = addon_install.install_and_report,
+        team_webhooks: bool | None = None) -> None:
     print("=" * 60)
     print(" ForeverNotify setup")
     print("=" * 60)
     print(f"This creates {config_path}.")
-    webhook, webhooks = _ask_webhooks(ask)
-    wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates)
+    if team_webhooks is None:
+        try:
+            team_webhooks = teamhooks.load_builtin() is not None
+        except teamhooks.TeamHooksError:
+            team_webhooks = False
+    if team_webhooks:
+        # Leave webhook_url empty so the encrypted team webhooks are used; the
+        # URLs never get written to config.toml in plain text.
+        print("This copy has your team's Discord channels built in, so there's only one question.")
+        webhook, webhooks = "", {}
+        wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates, "Step 1 of 1")
+    else:
+        webhook, webhooks = _ask_webhooks(ask)
+        wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates)
     template = resource_path("config.example.toml").read_text(encoding="utf-8")
     config_path.write_text(render_config(template, webhook, wow_dir, webhooks), encoding="utf-8")
     print(f"\nSaved {config_path}")

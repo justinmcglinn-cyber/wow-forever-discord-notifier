@@ -163,7 +163,22 @@ class ConfigLoading(unittest.TestCase):
 
     def test_missing_webhook_is_an_error(self):
         with self.assertRaises(config.ConfigError):
-            config.load(self.write("wow_dir = '/x'\n"))
+            config.load(self.write("wow_dir = '/x'\n"), builtin=None)
+
+    TEAM = ("https://discord.com/api/webhooks/1/deaths",
+            {"kill": "https://discord.com/api/webhooks/2/kills", "pvp": "https://discord.com/api/webhooks/3/pvp"})
+
+    def test_team_webhooks_used_when_config_has_none(self):
+        cfg = config.load(self.write("wow_dir = '/x'\n[webhooks]\npvp = 'https://discord.com/api/webhooks/9/mine'\n"),
+                          builtin=self.TEAM)
+        self.assertEqual(cfg.webhook_url, self.TEAM[0])
+        self.assertEqual(cfg.webhook_for("kill"), self.TEAM[1]["kill"])
+        self.assertEqual(cfg.webhook_for("pvp"), "https://discord.com/api/webhooks/9/mine")  # config overrides
+
+    def test_own_webhook_url_ignores_team_webhooks(self):
+        cfg = config.load(self.write("webhook_url = 'https://discord.com/api/webhooks/7/own'\nwow_dir = '/x'\n"),
+                          builtin=self.TEAM)
+        self.assertEqual(cfg.webhook_for("kill"), "https://discord.com/api/webhooks/7/own")
 
     def test_example_config_parses(self):
         example = Path(__file__).resolve().parents[1] / "config.example.toml"
