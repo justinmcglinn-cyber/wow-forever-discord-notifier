@@ -269,6 +269,64 @@ S.inCombat = false
 S.units.player.faction = nil
 S.Advance(2)
 
+-- Group fight: only your kills get their own post; the rest go into a battle report -----
+S.Advance(30)
+S.inGroup = true
+S.units.player.faction = "Horde"
+S.inCombat = true
+local myTarget = { name = "Mine", realm = "Stormrage", level = 25, class = "Rogue", race = "Human",
+  player = true, hostile = true, faction = "Alliance" }
+S.units.target = myTarget
+S.Fire("PLAYER_TARGET_CHANGED")
+S.Fire("PLAYER_REGEN_DISABLED")
+S.Advance(1)
+local groupStart = #S.screenshots
+
+local function GroupKill(honor)
+  S.Fire("CHAT_MSG_COMBAT_HONOR_GAIN", "You have been awarded " .. honor .. " Honor.")
+  S.pvpSessionKills = S.pvpSessionKills + 1
+  S.Fire("PLAYER_PVP_KILLS_CHANGED")
+  S.Advance(2)
+end
+
+-- A groupmate kills someone you never targeted.
+S.units.nameplate9 = { name = "Theirs", level = 25, class = "Warrior", race = "Dwarf", player = true,
+  hostile = true, dead = true, faction = "Alliance" }
+GroupKill(2)
+check(#S.screenshots == groupStart, "group kill you weren't targeting isn't posted on its own")
+
+-- Your target dies.
+myTarget.dead = true
+GroupKill(3)
+check(#S.screenshots == groupStart + 1, "your kill is posted")
+kill = LastPayload()
+check(Has(kill, "t=KILL") and Has(kill, "v=Mine|Stormrage|25|Rogue|Human|"), "your victim named: " .. kill)
+check(Has(kill, "hon=3") and Has(kill, "streak=1"), "honour from the award message; streak counts your kills")
+
+-- Clicking a corpse your group made doesn't make it yours.
+S.units.nameplate9 = nil
+S.units.target = { name = "Clicked", level = 24, class = "Mage", race = "Gnome", player = true, hostile = true,
+  dead = true, faction = "Alliance" }
+S.Fire("PLAYER_TARGET_CHANGED")
+GroupKill(1)
+check(#S.screenshots == groupStart + 1, "targeting a corpse afterwards isn't your kill")
+
+-- Out of combat for 30s: one battle report.
+S.inCombat = false
+S.units.target = nil
+S.Fire("PLAYER_REGEN_ENABLED")
+S.Advance(29)
+check(#S.screenshots == groupStart + 1, "no battle report while the fight might still be going")
+S.Advance(3)
+local report = LastPayload()
+check(#S.screenshots == groupStart + 2 and Has(report, "t=BATTLE"), "battle report after the fight: " .. report)
+check(Has(report, "k=3") and Has(report, "mine=1") and Has(report, "hon=6"), "report totals: " .. report)
+check(Has(report, "v=Theirs, Mine, Clicked"), "enemies down listed")
+S.Advance(60)
+check(#S.screenshots == groupStart + 2, "only one report per fight")
+S.inGroup = false
+S.units.player.faction = nil
+
 -- Game blocks one of our calls --------------------------------------------------
 S.Fire("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon", "CastSpellByName()")
 check(ForeverNotifyDB.blocked == nil, "other add-ons' blocked calls ignored")

@@ -127,6 +127,26 @@ class Formatting(unittest.TestCase):
         self.assertEqual(plain["title"], "🗡️ Frostbolt killed Other")
         self.assertNotIn("Victim", [f["name"] for f in plain["fields"]])
 
+    def test_battle_report(self):
+        body = formatting.format_signal({
+            "t": "BATTLE", "c": "Frostbolt", "r": "Realm", "k": "12", "mine": "3", "hon": "27", "dur": "245",
+            "streak": "3", "v": "Aldric, Brenna, Cato", "more": "9", "zone": "Wetlands"})
+        embed = body["embeds"][0]
+        self.assertEqual(embed["title"], "⚔️ Battle report: Frostbolt's group took down 12 enemies")
+        fields = {f["name"]: f["value"] for f in embed["fields"]}
+        self.assertEqual((fields["Your kills"], fields["Group kills"], fields["Honor"]), ("3", "12", "+27"))
+        self.assertEqual(fields["Fight length"], "4m 5s")
+        self.assertEqual(fields["Enemies down"], "Aldric, Brenna, Cato and 9 more")
+        one = formatting.format_signal({"t": "BATTLE", "c": "Frostbolt", "k": "1", "mine": "0"})["embeds"][0]
+        self.assertTrue(one["title"].endswith("took down 1 enemy"))
+
+    def test_battle_report_goes_to_kill_channel(self):
+        sent = []
+        cfg = config.Config(webhook_url="https://hook/deaths", screenshots_dir=Path("."), saved_variables_glob="",
+                            webhooks={"kill": "https://hook/kills"})
+        Notifier(cfg, lambda url, body: sent.append(url)).handle_signal({"t": "BATTLE", "c": "A", "r": "B", "k": "2"})
+        self.assertEqual(sent, ["https://hook/kills"])
+
     def test_kill_callouts(self):
         self.assertEqual(formatting.kill_callouts(1, 2), [])
         self.assertEqual(formatting.kill_callouts(1, 3), ["🔥 **KILLING SPREE** — 3 kills without dying"])

@@ -10,6 +10,7 @@ COLOURS = {
     "LEVEL": 0xF1C40F,
     "PVP": 0xE74C3C,
     "KILL": 0x9B59B6,
+    "BATTLE": 0x71368A,
     "FLAG": 0xE67E22,
     "TEST": 0x3498DB,
     "SUMMARY_UP": 0x2ECC71,
@@ -192,6 +193,25 @@ def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
         if p.get("hp"):
             fields.append(("Your health", f"{p['hp']}%", True))
         embed = _embed(kind, title, p, "\n".join(kill_callouts(multi, streak)), fields)
+    elif kind == "BATTLE":
+        def count(key):
+            try:
+                return int(p.get(key) or 0)
+            except ValueError:
+                return 0
+        total, mine = count("k"), count("mine")
+        title = f"⚔️ Battle report: {name}'s group took down {total} {'enemy' if total == 1 else 'enemies'}"
+        fields = [("Your kills", str(mine), True), ("Group kills", str(total), True)]
+        if p.get("hon"):
+            fields.append(("Honor", f"+{p['hon']}", True))
+        if p.get("dur"):
+            fields.append(("Fight length", duration(count("dur")), True))
+        if p.get("streak"):
+            fields.append(("Your streak", p["streak"], True))
+        if p.get("v"):
+            fields.append(("Enemies down", p["v"] + (f" and {p['more']} more" if p.get("more") else ""), False))
+        fields.append(("Location", location(p), False))
+        embed = _embed(kind, title, p, fields=fields)
     elif kind == "FLAG":
         state = "now flagged for PvP" if p.get("on") == "1" else "no longer flagged for PvP"
         embed = _embed(kind, f"🚩 {name} is {state}", p, fields=[("Location", location(p), False)])

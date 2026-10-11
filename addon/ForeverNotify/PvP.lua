@@ -67,6 +67,13 @@ function PvP.RecentlySeen(name)
   if s and GetTime() - s.at <= SEEN_TTL then return s.summary end
 end
 
+local targetedAlive = {}    -- name -> GetTime() an enemy player was last your target while alive
+
+-- When `name` was last your target while still alive (nil if never).
+function PvP.TargetedAliveAt(name)
+  return name and targetedAlive[name]
+end
+
 -- Enemy players seen dead in the last `window` seconds, newest first: { name, summary, deadAt }.
 function PvP.RecentlyDead(window)
   local now, list = GetTime(), {}
@@ -99,6 +106,7 @@ local function ScanUnits()
       local name = ns.call(UnitName, unit)
       if unit:find("^nameplate") then hostiles = hostiles + 1 end
       if name then seen[name] = { summary = ns.UnitSummary(unit), at = now } end
+      if name and unit == "target" then targetedAlive[name] = now end
       if name and ns.call(UnitIsUnit, unit .. "target", "player") then
         attackers[name] = { name = name, summary = ns.UnitSummary(unit), lastSeen = now, source = "unit" }
       end
@@ -199,6 +207,15 @@ end)
 
 ns.On("UNIT_TARGET", function(unit)
   if InCombat() and unit and unit ~= "player" then QuickCheck() end
+end)
+
+-- Remember enemy players you target (alive), even out of combat, to tell your
+-- kills from your group's.
+ns.On("PLAYER_TARGET_CHANGED", function()
+  if IsHostilePlayer("target") and not ns.call(UnitIsDeadOrGhost, "target") then
+    local name = ns.call(UnitName, "target")
+    if name then targetedAlive[name] = GetTime() end
+  end
 end)
 
 ns.On("NAME_PLATE_UNIT_ADDED", function()

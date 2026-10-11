@@ -9,7 +9,7 @@ from pathlib import Path
 from . import teamhooks
 
 EVENTS = ("death", "level", "pvp", "kill", "flag", "summary", "test")
-SIGNAL_EVENTS = {"DEATH": "death", "LEVEL": "level", "PVP": "pvp", "KILL": "kill", "FLAG": "flag", "TEST": "test"}
+SIGNAL_EVENTS = {"DEATH": "death", "LEVEL": "level", "PVP": "pvp", "KILL": "kill", "BATTLE": "kill", "FLAG": "flag", "TEST": "test"}
 
 
 class ConfigError(ValueError):

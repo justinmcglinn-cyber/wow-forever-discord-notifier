@@ -170,6 +170,7 @@ end
 function UnitFactionGroup(u) local r = Resolve(u); return r and r.faction end
 function UnitIsEnemy(_, u) local r = Resolve(u); return r and r.hostile or false end
 function UnitIsDeadOrGhost(u) local r = Resolve(u); return r and r.dead or false end
+function IsInGroup() return S.inGroup or false end
 function UnitAffectingCombat() return S.inCombat end
 function UnitHealth(u) local r = Resolve(u); return r and r.health end
 function UnitHealthMax(u) local r = Resolve(u); return r and r.maxHealth end
