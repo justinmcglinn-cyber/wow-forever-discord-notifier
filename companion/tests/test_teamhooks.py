@@ -1,13 +1,16 @@
 import io
 import os
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
-from forever_notify import config, setup_wizard, teamhooks
+from forever_notify import cli, config, setup_wizard, teamhooks
 
 URL = "https://discord.com/api/webhooks/123456789/secret-token"
+HOOKS = {"kill": URL + "/kills", "pvp": URL + "/pvp", "flag": URL + "/pvp"}
 
 
 class Encryption(unittest.TestCase):
@@ -34,33 +37,78 @@ class Encryption(unittest.TestCase):
             teamhooks.unseal(b"junk", self.key)
 
 
-class CommittedTeamData(unittest.TestCase):
-    def test_team_data_decrypts_and_hides_urls(self):
-        path = Path(teamhooks.__file__).with_name("team_data.py")
-        if not path.exists():
-            self.skipTest("no team webhooks generated")
-        self.assertNotIn("discord", path.read_text(encoding="utf-8").lower())
-        main, hooks = teamhooks.load_builtin()
-        for url in [main, *hooks.values()]:
-            self.assertTrue(url.startswith(setup_wizard.WEBHOOK_PREFIXES))
+class TeamCode(unittest.TestCase):
+    def test_round_trip_hides_urls_and_survives_chat_wrapping(self):
+        code = teamhooks.make_code(URL, HOOKS)
+        self.assertTrue(code.startswith(teamhooks.CODE_PREFIX))
+        self.assertNotIn("discord", code.lower())
+        self.assertLess(len(code), 2000, "fits in one Discord message")
+        self.assertEqual(teamhooks.read_code(code), (URL, HOOKS))
+        wrapped = f"`{code[:50]}\n {code[50:120]} {code[120:]}`"
+        self.assertEqual(teamhooks.read_code(wrapped), (URL, HOOKS))
+
+    def test_bad_codes_rejected(self):
+        code = teamhooks.make_code(URL, HOOKS)
+        for bad in ("", URL, code[:-10], code[:40] + ("A" if code[40] != "A" else "B") + code[41:]):
+            with self.assertRaises(teamhooks.TeamHooksError, msg=bad[:30]):
+                teamhooks.read_code(bad)
+
+    def test_no_webhooks_in_the_code_base(self):
+        package = Path(teamhooks.__file__).parent
+        self.assertFalse((package / "team_data.py").exists())
 
 
 class TeamSetup(unittest.TestCase):
-    def test_setup_only_asks_for_wow_folder_and_writes_no_urls(self):
-        tmp = Path(tempfile.mkdtemp())
-        wow = tmp / "World of Warcraft" / "_forever_"
-        (wow / "WTF").mkdir(parents=True)
-        path = tmp / "config.toml"
-        answers = iter(["1"])  # only the folder question
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.wow = self.tmp / "World of Warcraft" / "_forever_"
+        (self.wow / "WTF").mkdir(parents=True)
+        self.path = self.tmp / "config.toml"
+
+    def test_setup_with_team_code_retries_a_bad_paste(self):
+        answers = iter(["1", "FNTEAM1-garbage", teamhooks.make_code(URL, HOOKS), "1"])
         with redirect_stdout(io.StringIO()):
-            setup_wizard.run(path, ask=lambda _: next(answers), candidates=[wow],
-                             install_addon=lambda _: True, team_webhooks=True)
-        text = path.read_text(encoding="utf-8")
-        self.assertIn("webhook_url = ''", text)
-        self.assertNotIn("webhooks/1", text)  # no real webhook written (only the template's placeholders)
-        cfg = config.load(path, builtin=(URL, {"kill": URL + "/kills"}))
+            setup_wizard.run(self.path, ask=lambda _: next(answers), candidates=[self.wow],
+                             install_addon=lambda _: True)
+        cfg = config.load(self.path)
+        self.assertEqual(cfg.webhook_for("death"), URL)
         self.assertEqual(cfg.webhook_for("kill"), URL + "/kills")
-        self.assertEqual(cfg.screenshots_dir, wow / "Screenshots")
+        self.assertEqual(cfg.webhook_for("flag"), URL + "/pvp")
+        self.assertEqual(cfg.screenshots_dir, self.wow / "Screenshots")
+
+    def test_old_config_without_webhooks_asks_for_the_code_and_keeps_settings(self):
+        # A config.toml written by a version with the team's webhooks built in.
+        template = setup_wizard.resource_path("config.example.toml").read_text(encoding="utf-8")
+        text = re.sub(r"(?m)^flag = true", "flag = false", setup_wizard.render_config(template, "", str(self.wow)))
+        self.path.write_text(text, encoding="utf-8")
+        with self.assertRaises(config.NoWebhookError):
+            config.load(self.path)
+
+        answers = iter(["1", teamhooks.make_code(URL, HOOKS)])
+        with redirect_stdout(io.StringIO()):
+            setup_wizard.add_webhooks(self.path, ask=lambda _: next(answers))
+        cfg = config.load(self.path)
+        self.assertEqual(cfg.webhook_for("level"), URL)
+        self.assertEqual(cfg.webhook_for("kill"), URL + "/kills")
+        self.assertEqual(cfg.wow_dir, self.wow)
+        self.assertFalse(cfg.enabled("flag"), "other settings kept")
+
+    def test_run_asks_for_webhooks_when_config_has_none(self):
+        template = setup_wizard.resource_path("config.example.toml").read_text(encoding="utf-8")
+        self.path.write_text(setup_wizard.render_config(template, "", str(self.wow)), encoding="utf-8")
+        answers = iter(["1", teamhooks.make_code(URL, HOOKS)])
+        add_webhooks = setup_wizard.add_webhooks
+        tty = mock.Mock(isatty=lambda: True)
+        with mock.patch.object(cli.setup_wizard, "add_webhooks",
+                               lambda path: add_webhooks(path, ask=lambda _: next(answers))), \
+                mock.patch.object(cli.sys, "stdin", tty), \
+                mock.patch.object(cli, "send_tests", return_value=True) as send_tests, \
+                mock.patch.object(cli.addon_install, "sync_and_report"), mock.patch.object(cli.app, "run"), \
+                redirect_stdout(io.StringIO()):
+            code = cli.main(["-c", str(self.path), "run"])
+        self.assertEqual(code, 0)
+        send_tests.assert_called_once()  # samples posted, like after setup
+        self.assertEqual(config.load(self.path).webhook_for("kill"), URL + "/kills")
 
 
 if __name__ == "__main__":

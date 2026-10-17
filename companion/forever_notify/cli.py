@@ -131,7 +131,18 @@ def main(argv: list[str] | None = None) -> int:
         fresh_setup = True
 
     try:
-        cfg = config.load(args.config)
+        try:
+            cfg = config.load(args.config)
+        except config.NoWebhookError:
+            # A config from a version with the team's webhooks built in: ask for them now.
+            if not (sys.stdin and sys.stdin.isatty()):
+                raise
+            setup_wizard.add_webhooks(args.config)
+            cfg = config.load(args.config)
+            fresh_setup = True
+    except (EOFError, KeyboardInterrupt):
+        print("\nCancelled; config.toml not changed.", file=sys.stderr)
+        return 2
     except config.ConfigError as e:
         print(f"Config error: {e}", file=sys.stderr)
         return 2

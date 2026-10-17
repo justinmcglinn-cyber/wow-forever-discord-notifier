@@ -1,4 +1,4 @@
-"""First-run setup: ask for the webhook and WoW folder, then write config.toml."""
+"""First-run setup: ask for the team code or webhooks and the WoW folder, then write config.toml."""
 
 from __future__ import annotations
 
@@ -85,15 +85,27 @@ def _ask_url(ask: Callable[[str], str], prompt: str, default: str = "") -> str:
         print("  That doesn't look like a Discord webhook URL (it should start with https://discord.com/api/webhooks/).")
 
 
-def _ask_webhooks(ask: Callable[[str], str]) -> tuple[str, dict[str, str]]:
+def _ask_team_code(ask: Callable[[str], str]) -> tuple[str, dict[str, str]]:
+    while True:
+        code = ask("  Paste the team code (right-click to paste): ")
+        try:
+            return teamhooks.read_code(code)
+        except teamhooks.TeamHooksError as e:
+            print(f"  That didn't work: {e}. Copy the whole code and try again.")
+
+
+def _ask_webhooks(ask: Callable[[str], str], step: str = "Step 1 of 2") -> tuple[str, dict[str, str]]:
     """Returns the main webhook_url and any per-event webhooks that differ from it."""
-    print("\nStep 1 of 2: Discord webhooks")
-    print("  In Discord: channel settings (gear) > Integrations > Webhooks > New Webhook > Copy Webhook URL.")
-    print("  1. Send everything to one channel")
-    print("  2. Use a separate channel for each notification type")
-    while (choice := ask("  Enter 1 or 2: ").strip()) not in ("1", "2"):
+    print(f"\n{step}: Discord channels")
+    print("  1. Paste a team code (your guild posts one in Discord)")
+    print("  2. Send everything to one channel of your own")
+    print("  3. Use a separate channel of your own for each notification type")
+    while (choice := ask("  Enter 1, 2 or 3: ").strip()) not in ("1", "2", "3"):
         pass
     if choice == "1":
+        return _ask_team_code(ask)
+    print("  In Discord: channel settings (gear) > Integrations > Webhooks > New Webhook > Copy Webhook URL.")
+    if choice == "2":
         return _ask_url(ask, "  Paste the webhook URL (right-click to paste): "), {}
 
     print("  Paste each channel's webhook URL. Press Enter to reuse the previous one.")
@@ -103,6 +115,27 @@ def _ask_webhooks(ask: Callable[[str], str]) -> tuple[str, dict[str, str]]:
         urls[event] = previous = _ask_url(ask, f"  {label}: ", previous)
     urls["flag"] = urls["pvp"]
     return urls["death"], {event: url for event, url in urls.items() if url != urls["death"]}
+
+
+def set_webhooks(text: str, webhook_url: str, webhooks: dict[str, str]) -> str:
+    """Set webhook_url and the per-event webhooks in config.toml text, keeping everything else."""
+    line = f"webhook_url = {toml_string(webhook_url)}"
+    if re.search(r'(?m)^webhook_url\s*=', text):
+        text = re.sub(r'(?m)^webhook_url\s*=.*$', lambda _: line, text, count=1)
+    else:
+        text = line + "\n" + text
+    for event, url in webhooks.items():
+        text = set_webhook(text, event, url)
+    return text
+
+
+def add_webhooks(config_path: Path, ask: Callable[[str], str] = input) -> None:
+    """For a config.toml without webhooks: ask for them and save, keeping the other settings."""
+    print("This version no longer has the team's Discord channels built in.")
+    webhook, webhooks = _ask_webhooks(ask, "One question")
+    text = config_path.read_text(encoding="utf-8-sig")
+    config_path.write_text(set_webhooks(text, webhook, webhooks), encoding="utf-8")
+    print(f"\nSaved {config_path}\n")
 
 
 def _ask_wow_dir(ask: Callable[[str], str], candidates: list[Path], step: str = "Step 2 of 2") -> str:
@@ -126,26 +159,13 @@ def _ask_wow_dir(ask: Callable[[str], str], candidates: list[Path], step: str = 
 
 
 def run(config_path: Path, ask: Callable[[str], str] = input, candidates: list[Path] | None = None,
-        install_addon: Callable[[Path], bool] = addon_install.install_and_report,
-        team_webhooks: bool | None = None) -> None:
+        install_addon: Callable[[Path], bool] = addon_install.install_and_report) -> None:
     print("=" * 60)
     print(" ForeverNotify setup")
     print("=" * 60)
     print(f"This creates {config_path}.")
-    if team_webhooks is None:
-        try:
-            team_webhooks = teamhooks.load_builtin() is not None
-        except teamhooks.TeamHooksError:
-            team_webhooks = False
-    if team_webhooks:
-        # Leave webhook_url empty so the encrypted team webhooks are used; the
-        # URLs never get written to config.toml in plain text.
-        print("This copy has your team's Discord channels built in, so there's only one question.")
-        webhook, webhooks = "", {}
-        wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates, "Step 1 of 1")
-    else:
-        webhook, webhooks = _ask_webhooks(ask)
-        wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates)
+    webhook, webhooks = _ask_webhooks(ask)
+    wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates)
     template = resource_path("config.example.toml").read_text(encoding="utf-8")
     config_path.write_text(render_config(template, webhook, wow_dir, webhooks), encoding="utf-8")
     print(f"\nSaved {config_path}")

@@ -24,11 +24,11 @@ class SetupWizard(unittest.TestCase):
         self.installed_to = []
         with redirect_stdout(io.StringIO()):
             setup_wizard.run(path, ask=lambda _: next(answers), candidates=candidates,
-                             install_addon=self.installed_to.append, team_webhooks=False)
+                             install_addon=self.installed_to.append)
         return config.load(path)
 
     def test_one_channel_picks_detected_folder_and_rejects_bad_webhook(self):
-        cfg = self.run_wizard(["3", "1", "not a url", WEBHOOK, "1"], [self.wow])
+        cfg = self.run_wizard(["4", "2", "not a url", WEBHOOK, "1"], [self.wow])
         self.assertEqual(cfg.webhook_url, WEBHOOK)
         self.assertEqual(cfg.webhooks, {})
         self.assertEqual(cfg.screenshots_dir, self.wow / "Screenshots")
@@ -38,7 +38,7 @@ class SetupWizard(unittest.TestCase):
 
     def test_separate_channels(self):
         gold, deaths, level, pvp, kills = (f"{WEBHOOK}/{n}" for n in ("gold", "deaths", "level", "pvp", "kills"))
-        cfg = self.run_wizard(["2", deaths, level, pvp, kills, gold, "1"], [self.wow])
+        cfg = self.run_wizard(["3", deaths, level, pvp, kills, gold, "1"], [self.wow])
         self.assertEqual(cfg.webhook_url, deaths)
         for event, url in [("death", deaths), ("level", level), ("pvp", pvp), ("flag", pvp), ("kill", kills),
                            ("summary", gold)]:
@@ -46,7 +46,7 @@ class SetupWizard(unittest.TestCase):
 
     def test_separate_channels_enter_reuses_previous(self):
         other = WEBHOOK + "/other"
-        cfg = self.run_wizard(["2", WEBHOOK, "", other, "", "", "1"], [self.wow])
+        cfg = self.run_wizard(["3", WEBHOOK, "", other, "", "", "1"], [self.wow])
         self.assertEqual(cfg.webhook_for("level"), WEBHOOK)
         self.assertEqual(cfg.webhook_for("summary"), other)
         self.assertEqual(cfg.webhooks, {"pvp": other, "kill": other, "summary": other, "flag": other})
@@ -54,7 +54,7 @@ class SetupWizard(unittest.TestCase):
     def test_pasted_path_with_quotes_and_apostrophe(self):
         odd = self.tmp / "Bob's Games" / "_forever_"
         odd.mkdir(parents=True)
-        cfg = self.run_wizard(["1", WEBHOOK, str(self.tmp / "missing"), f'"{odd}"'], [])
+        cfg = self.run_wizard(["2", WEBHOOK, str(self.tmp / "missing"), f'"{odd}"'], [])
         self.assertEqual(cfg.screenshots_dir, odd / "Screenshots")
 
     def test_find_wow_dirs(self):

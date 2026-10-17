@@ -1,13 +1,12 @@
-"""Team webhooks built into the code, encrypted.
+"""Team codes: a team's Discord webhooks in one string to paste into setup.
 
-make_team_hooks.py encrypts the webhook URLs from a config.toml with a fresh
-random key into forever_notify/team_data.py (committed), so every build is a
-ready-to-share team exe.
+make_team_hooks.py turns the webhooks in a config.toml into a team code, to
+post somewhere private (e.g. a pinned message in the guild's Discord). Setup
+asks for it, so the exe and this repo hold no webhooks and can be public.
 
-This keeps the URLs from being read casually (Notepad, strings, secret
-scanners), but the key sits next to the encrypted data, so anyone with the repo
-or the exe can recover them. If one leaks, recreate that webhook in Discord,
-re-run make_team_hooks.py and rebuild.
+The code carries its own key, so the encryption only keeps the URLs from being
+read casually (and from secret scanners); anyone with the code can post to the
+channels. If it leaks, recreate the webhooks in Discord and make a new code.
 
 Cipher: SHA-256 in counter mode as the keystream, HMAC-SHA256 over nonce and
 ciphertext for integrity (standard library only, so the exe stays small).
@@ -20,8 +19,12 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import zlib
 
 MAGIC = b"FNTH1"
+CODE_PREFIX = "FNTEAM1-"
+KEY_SIZE = 32
 NONCE_SIZE = 16
 TAG_SIZE = 32
 
@@ -54,29 +57,44 @@ def seal(data: bytes, key: bytes) -> bytes:
 
 def unseal(blob: bytes, key: bytes) -> bytes:
     if len(blob) < len(MAGIC) + NONCE_SIZE + TAG_SIZE or not blob.startswith(MAGIC):
-        raise TeamHooksError("not a team webhook file")
+        raise TeamHooksError("not a team code")
     enc_key, mac_key = _keys(key)
     nonce = blob[len(MAGIC):len(MAGIC) + NONCE_SIZE]
     body, tag = blob[len(MAGIC) + NONCE_SIZE:-TAG_SIZE], blob[-TAG_SIZE:]
     expected = hmac.new(mac_key, MAGIC + nonce + body, hashlib.sha256).digest()
     if not hmac.compare_digest(tag, expected):
-        raise TeamHooksError("team webhooks are damaged or were built with a different key")
+        raise TeamHooksError("the team code is incomplete or mistyped")
     return bytes(a ^ b for a, b in zip(body, _keystream(enc_key, nonce, len(body))))
 
 
 def encode(webhook_url: str, webhooks: dict[str, str], key: bytes) -> bytes:
-    return seal(json.dumps({"webhook_url": webhook_url, "webhooks": webhooks}).encode("utf-8"), key)
+    data = json.dumps({"webhook_url": webhook_url, "webhooks": webhooks}, separators=(",", ":"))
+    return seal(zlib.compress(data.encode("utf-8"), 9), key)
 
 
 def decode(blob: bytes, key: bytes) -> tuple[str, dict[str, str]]:
-    data = json.loads(unseal(blob, key).decode("utf-8"))
+    try:
+        data = json.loads(zlib.decompress(unseal(blob, key)).decode("utf-8"))
+    except (zlib.error, UnicodeDecodeError, ValueError) as e:
+        if isinstance(e, TeamHooksError):
+            raise
+        raise TeamHooksError("not a team code") from e
     return data.get("webhook_url", ""), dict(data.get("webhooks", {}))
 
 
-def load_builtin() -> tuple[str, dict[str, str]] | None:
-    """The team webhooks built into the code, or None if there are none."""
+def make_code(webhook_url: str, webhooks: dict[str, str]) -> str:
+    key = os.urandom(KEY_SIZE)
+    return CODE_PREFIX + base64.urlsafe_b64encode(key + encode(webhook_url, webhooks, key)).decode("ascii").rstrip("=")
+
+
+def read_code(code: str) -> tuple[str, dict[str, str]]:
+    """The webhooks in a team code. Spaces and line breaks (from wrapped chat messages) are ignored."""
+    code = re.sub(r"\s+", "", code).strip("`\"'")
+    if not code.startswith(CODE_PREFIX):
+        raise TeamHooksError("not a team code (it starts with " + CODE_PREFIX + ")")
+    body = code[len(CODE_PREFIX):]
     try:
-        from . import team_data  # written by make_team_hooks.py
-    except ImportError:
-        return None
-    return decode(base64.b64decode(team_data.BLOB), bytes.fromhex(team_data.KEY))
+        raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+    except ValueError as e:
+        raise TeamHooksError("the team code is incomplete or mistyped") from e
+    return decode(raw[KEY_SIZE:], raw[:KEY_SIZE])

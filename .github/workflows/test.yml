@@ -9,6 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: No real Discord webhooks in the repo
+        run: |
+          if git grep -nIE 'discord(app)?\.com/api/webhooks/[0-9]{15,}'; then
+            echo "A Discord webhook URL is committed. Remove it and recreate that webhook in Discord."
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -30,6 +36,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      id-token: write      # build provenance attestation
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,10 +55,34 @@ jobs:
           path: |
             companion/dist/ForeverNotify.exe
             companion/dist/config.example.toml
-      - name: Attach to release (version tags only)
+      - name: Zip the release (version tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          Compress-Archive -Path companion\dist\ForeverNotify.exe, companion\dist\config.example.toml, addon\ForeverNotify -DestinationPath ForeverNotify-${{ github.ref_name }}.zip
+      - name: Attest build provenance (version tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        # Needs a public repo (or GitHub Enterprise); never blocks the release.
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            companion/dist/ForeverNotify.exe
+            ForeverNotify-${{ github.ref_name }}.zip
+      - name: Publish the release (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          Compress-Archive -Path companion\dist\ForeverNotify.exe, companion\dist\config.example.toml, addon\ForeverNotify -DestinationPath ForeverNotify-${{ github.ref_name }}.zip
-          gh release create ${{ github.ref_name }} ForeverNotify-${{ github.ref_name }}.zip --title ${{ github.ref_name }} --generate-notes
+          $exe = (Get-FileHash companion\dist\ForeverNotify.exe -Algorithm SHA256).Hash
+          $zip = (Get-FileHash ForeverNotify-${{ github.ref_name }}.zip -Algorithm SHA256).Hash
+          $notes = @(
+            "Built by GitHub Actions from commit ${{ github.sha }} ([build log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})).",
+            "",
+            "SHA-256 of ``ForeverNotify.exe`` (inside the zip): ``$exe``",
+            "SHA-256 of ``ForeverNotify-${{ github.ref_name }}.zip``: ``$zip``",
+            "",
+            "Check your copy in PowerShell: ``Get-FileHash .\ForeverNotify.exe``. With the GitHub CLI, ``gh attestation verify ForeverNotify.exe -R ${{ github.repository }}`` also confirms it was built here.",
+            ""
+          ) -join "`n"
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+          gh release create ${{ github.ref_name }} ForeverNotify-${{ github.ref_name }}.zip --title ${{ github.ref_name }} --notes-file release-notes.md --generate-notes
