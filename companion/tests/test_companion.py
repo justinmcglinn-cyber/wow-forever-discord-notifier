@@ -288,6 +288,15 @@ class TestMessages(unittest.TestCase):
         self.assertIn("Frostbolt reached level 25", samples["level"]["embeds"][0]["title"])
         self.assertEqual(samples["pvp"]["content"], "<@1>")
 
+    def test_level_up_shows_time_played_at_the_previous_level(self):
+        body = formatting.format_signal({"t": "LEVEL", "c": "Frostbolt", "r": "Realm", "lv": "30", "new": "30",
+                                         "prev": "17280", "sess": "3040"})
+        fields = {f["name"]: f["value"] for f in body["embeds"][0]["fields"]}
+        self.assertEqual(fields["Played at level 29"], formatting.duration(17280))
+        self.assertIn("Lv 30", body["embeds"][0]["footer"]["text"])
+        body = formatting.format_signal({"t": "LEVEL", "c": "Frostbolt", "r": "Realm", "new": "30"})
+        self.assertNotIn("Played", str(body["embeds"][0].get("fields")), "no field when the add-on doesn't know")
+
     def test_in_game_test_posts_a_sample_to_each_channel(self):
         sent = []
         Notifier(multi_channel_config(), lambda url, body: sent.append((url, body["embeds"][0]["title"]))) \

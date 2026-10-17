@@ -50,6 +50,13 @@ S.Fire("PLAYER_ENTERING_WORLD", true, false)
 check(S.cvars.screenshotFormat == "png", "screenshot format switched to png")
 S.Advance(3)
 check(#S.screenshots == 0, "no signal at plain login")
+check(S.playedRequests == 1, "played time requested at login")
+check(S.chatPlayedShown == 0, "our /played request isn't shown in chat")
+local playedSyncedAt = 1000.5 -- the server's answer: 3600s at level 23 so far
+S.Advance(10)
+check(ChatFrame1:IsEventRegistered("TIME_PLAYED_MSG"), "chat listens for /played again")
+S.Fire("TIME_PLAYED_MSG", S.played.total, S.played.level + (S.now - playedSyncedAt)) -- the player types /played
+check(S.chatPlayedShown == 1, "a /played the player types still shows")
 
 -- Test command ----------------------------------------------------------------
 SlashCmdList.FOREVERNOTIFY("test")
@@ -334,11 +341,17 @@ S.Fire("ADDON_ACTION_FORBIDDEN", "ForeverNotify", "Screenshot()")
 check(ForeverNotifyDB.blocked and ForeverNotifyDB.blocked[1].func == "Screenshot()", "blocked call recorded")
 
 -- Level up ---------------------------------------------------------------------
+local expectedPlayed = 3600 + (S.now - playedSyncedAt)
+S.Fire("PLAYER_LEVEL_UP", 24) -- the client still says level 23 at this point
 S.units.player.level = 24
-S.Fire("PLAYER_LEVEL_UP", 24)
 S.Advance(1)
-check(Has(LastPayload(), "t=LEVEL"), "level payload type")
-check(Has(LastPayload(), "new=24"), "new level")
+local level = LastPayload()
+check(Has(level, "t=LEVEL"), "level payload type")
+check(Has(level, "new=24"), "new level")
+check(Has(level, "lv=24"), "footer level is the new one: " .. level)
+local prev = tonumber(level:match("\nprev=(%d+)"))
+check(prev and math.abs(prev - expectedPlayed) <= 1, "played time at level 23: " .. tostring(prev) .. " vs "
+  .. expectedPlayed)
 
 -- Reload keeps the session and signals the companion --------------------------------
 local sessionId = session.id
@@ -377,6 +390,27 @@ check(summary.deaths == 4, "summary deaths")
 check(summary.accountMoney == S.money + 2500000, "account total")
 check(summary.accountChars == 2, "account character count")
 check(summary.startLevel == 23 and summary.endLevel == 24, "summary levels")
+
+-- Played time when the server doesn't answer -------------------------------------
+-- Logging in at a level reached without the add-on: its own count hasn't covered
+-- the whole level, so nothing is posted for it; the next level is counted in full.
+S.playedSilent = true
+S.units.player.level = 25
+S.Fire("PLAYER_ENTERING_WORLD", true, false)
+S.Advance(100)
+check(S.chatPlayedShown == 1 and ChatFrame1:IsEventRegistered("TIME_PLAYED_MSG"),
+  "chat listens again when the server never answers")
+S.Fire("PLAYER_LEVEL_UP", 26)
+S.units.player.level = 26
+S.Advance(1)
+check(Has(LastPayload(), "new=26") and not LastPayload():find("\nprev="), "partial count not posted: "
+  .. LastPayload())
+S.Advance(299)
+S.Fire("PLAYER_LEVEL_UP", 27)
+S.units.player.level = 27
+S.Advance(1)
+prev = tonumber(LastPayload():match("\nprev=(%d+)"))
+check(prev and math.abs(prev - 300) <= 1, "own count for a level seen from the start: " .. tostring(prev))
 
 -- Combat log stays off in auto mode on a Midnight-era client -------------------------
 check(not ns.PvP.CombatLogAvailable(), "combat log reported off in auto mode")

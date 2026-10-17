@@ -27,6 +27,7 @@ ns.On("PLAYER_ENTERING_WORLD", function(isInitialLogin, isReloadingUi)
   enteredWorld = true
 
   ns.Gold.Begin(isReload)
+  ns.Played.Begin()
   ns.PvP.CheckFlag()
   ns.Signal.EnsureLosslessFormat()
 
@@ -51,16 +52,14 @@ end)
 
 ns.On("PLAYER_LEVEL_UP", function(level)
   local char = ns.db.chars[ns.CharKey()]
-  local previous = char and char.levelReachedAt
-  if char then
-    char.levelReachedAt = time()
-    char.level = level
-  end
+  if char then char.level = level end
+  local played = ns.Played.LevelUp(level)
   if not ns.db.settings.level then return end
   local session = ns.db.sessions[ns.CharKey()]
-  ns.NewPayload("LEVEL")
+  -- The client still reports the old level while this event fires.
+  ns.NewPayload("LEVEL", level)
     :Set("new", level)
-    :Set("prev", previous and (time() - previous))
+    :Set("prev", played and math.floor(played))
     :Set("sess", session and (time() - session.start))
     :SetLocation(ns.Location())
     :Send()

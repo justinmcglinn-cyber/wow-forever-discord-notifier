@@ -165,12 +165,13 @@ end
 local Payload = {}
 Payload.__index = Payload
 
-function ns.NewPayload(kind)
+-- level: the player's level, when UnitLevel() would be out of date.
+function ns.NewPayload(kind, level)
   local p = setmetatable({ lines = {} }, Payload)
   p:Set("t", kind)
   p:Set("c", ns.PlayerName())
   p:Set("r", ns.Realm())
-  p:Set("lv", ns.call(UnitLevel, "player"))
+  p:Set("lv", level or ns.call(UnitLevel, "player"))
   p:Set("ts", time())
   return p
 end

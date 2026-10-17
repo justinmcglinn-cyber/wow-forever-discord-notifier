@@ -41,6 +41,7 @@ function Frame:RegisterEvent(event)
   self.events[event] = true
 end
 function Frame:UnregisterEvent(event) self.events[event] = nil end
+function Frame:IsEventRegistered(event) return self.events[event] == true end
 
 -- True if any frame is registered for the event.
 function S.Registered(event)
@@ -119,6 +120,22 @@ function S.Advance(seconds)
     end
   end
 end
+
+-- Played time: the server answers RequestTimePlayed() half a second later
+-- (unless S.playedSilent), and the chat window shows the answer if it hears it.
+S.played = { total = 500000, level = 3600 }
+S.playedRequests = 0
+S.chatPlayedShown = 0
+function RequestTimePlayed()
+  S.playedRequests = S.playedRequests + 1
+  if S.playedSilent then return end
+  C_Timer.After(0.5, function() S.Fire("TIME_PLAYED_MSG", S.played.total, S.played.level) end)
+end
+NUM_CHAT_WINDOWS = 1
+CreateFrame("Frame", "ChatFrame1"):RegisterEvent("TIME_PLAYED_MSG")
+ChatFrame1:SetScript("OnEvent", function(_, event)
+  if event == "TIME_PLAYED_MSG" then S.chatPlayedShown = S.chatPlayedShown + 1 end
+end)
 
 ------------------------------------------------------------------------------
 -- Screenshots: record the shown signal-grid blocks in screen pixels

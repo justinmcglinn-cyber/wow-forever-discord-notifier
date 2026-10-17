@@ -155,7 +155,9 @@ def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
     elif kind == "LEVEL":
         fields = [("Location", location(p), False)]
         if p.get("prev"):
-            fields.append(("Time on previous level", duration(float(p["prev"])), True))
+            new = p.get("new", "")
+            label = f"Played at level {int(new) - 1}" if new.isdigit() else "Played on previous level"
+            fields.append((label, duration(float(p["prev"])), True))
         if p.get("sess"):
             fields.append(("This session", duration(float(p["sess"])), True))
         embed = _embed(kind, f"⬆️ {name} reached level {p.get('new', '?')}", p, fields=fields)
