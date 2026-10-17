@@ -1,8 +1,5 @@
-# Copy this file to config.toml and fill in the two settings marked REQUIRED.
-
-# REQUIRED: Discord webhook (Server Settings → Integrations → Webhooks → New Webhook → Copy URL).
-# Keep it private: anyone with this URL can post to your channel.
-webhook_url = ""
+# Setup ('ForeverNotify.exe setup') writes this for you as config.toml. To do it by hand,
+# copy this file to config.toml and fill in wow_dir and [webhooks] below.
 
 # REQUIRED: your WoW Forever install folder, the one containing the Screenshots and WTF folders.
 # Use single quotes so backslashes are kept as-is.
@@ -26,21 +23,29 @@ summary_grace_seconds = 30
 # How often to check for new screenshots (seconds).
 poll_seconds = 0.2
 
+# REQUIRED: the Discord channel each kind of message goes to, as webhook URLs
+# (channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL).
+# Keep them private: anyone with one can post to that channel.
+# For one channel for everything, set only default. Any channel left empty uses default.
+[webhooks]
+default = ""
+deaths = ""         # 💀 deaths, with the killer when known
+level_ups = ""      # ⬆️ level-ups
+pvp_alerts = ""     # ⚔️ "under attack" alerts
+pvp_kills = ""      # 🗡️ your PvP kills and group battle reports
+gold_summary = ""   # 💰 gold summary after logout
+pvp_flag = ""       # PvP flag on/off (only if turned on in game with /fnotify flag); empty = pvp_alerts
+
+# Turn a kind of message off (false) without touching the add-on.
 [notify]
-death = true
-level = true
-pvp = true
-kill = true      # honourable kills of enemy-faction players
-flag = true      # only sent if also enabled in game with /fnotify flag
-summary = true
-test = true
+deaths = true
+level_ups = true
+pvp_alerts = true
+pvp_kills = true
+gold_summary = true
+pvp_flag = true      # also needs /fnotify flag in game
+test_messages = true # samples from /fnotify test
 
 [mentions]
 # Added to PvP alerts so your phone pings loudly, e.g. "<@123456789012345678>" (your Discord user ID).
-pvp = ""
-
-[webhooks]
-# Optional per-event webhooks (e.g. a separate #pvp channel). Unlisted events use webhook_url.
-# pvp = "https://discord.com/api/webhooks/..."
-# kill = "https://discord.com/api/webhooks/..."
-# summary = "https://discord.com/api/webhooks/..."
+pvp_alerts = ""

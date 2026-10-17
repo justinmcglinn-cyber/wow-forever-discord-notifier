@@ -187,9 +187,27 @@ class ConfigLoading(unittest.TestCase):
 
     def test_example_config_parses(self):
         example = Path(__file__).resolve().parents[1] / "config.example.toml"
-        text = example.read_text(encoding="utf-8").replace('webhook_url = ""', "webhook_url = 'https://x'")
+        text = example.read_text(encoding="utf-8").replace('default = ""', "default = 'https://x'")
         cfg = config.load(self.write(text))
         self.assertTrue(cfg.enabled("pvp"))
+        self.assertEqual(cfg.webhook_for("kill"), "https://x")
+
+    def test_named_webhooks_without_default_and_flag_follows_pvp(self):
+        hooks = {name: f"https://discord.com/api/webhooks/{i}/x" for i, name in
+                 enumerate(("deaths", "level_ups", "pvp_alerts", "pvp_kills", "gold_summary"))}
+        text = "wow_dir = '/x'\n[webhooks]\n" + "".join(f"{k} = '{v}'\n" for k, v in hooks.items())
+        text += "[notify]\npvp_kills = false\n[mentions]\npvp_alerts = '<@1>'\n"
+        cfg = config.load(self.write(text))
+        for event, name in [("death", "deaths"), ("level", "level_ups"), ("pvp", "pvp_alerts"),
+                            ("flag", "pvp_alerts"), ("kill", "pvp_kills"), ("summary", "gold_summary")]:
+            self.assertEqual(cfg.webhook_for(event), hooks[name], event)
+        self.assertFalse(cfg.enabled("kill"))
+        self.assertEqual(cfg.pvp_mention, "<@1>")
+
+    def test_a_channel_without_a_webhook_is_an_error(self):
+        with self.assertRaises(config.ConfigError) as caught:
+            config.load(self.write("wow_dir = '/x'\n[webhooks]\ndeaths = 'https://discord.com/api/webhooks/1/x'\n"))
+        self.assertIn("level_ups", str(caught.exception))
 
 
 class Watching(unittest.TestCase):

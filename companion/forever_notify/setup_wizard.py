@@ -5,14 +5,16 @@ from __future__ import annotations
 import re
 import string
 import sys
+import tomllib
 from pathlib import Path
 from typing import Callable
 
-from . import addon_install, teamhooks
+from . import addon_install, config, teamhooks
 
 WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/",
                     "https://ptb.discord.com/api/webhooks/", "https://canary.discord.com/api/webhooks/")
-# (config key, label) for each channel the wizard asks about; PvP flag alerts follow pvp.
+# (event, label) for each channel the wizard asks about (config.NAMES has their config.toml names);
+# PvP flag notices follow pvp.
 CHANNELS = (("death", "Deaths"), ("level", "Level ups"), ("pvp", "PvP alerts"), ("kill", "PvP kills"), ("summary", "Gold summary (on logout)"))
 WOW_PARENTS = (r"Program Files (x86)\World of Warcraft", r"Program Files\World of Warcraft",
                r"World of Warcraft", r"Games\World of Warcraft", r"Battle.net\World of Warcraft")
@@ -47,28 +49,76 @@ def toml_string(value: str) -> str:
 
 
 def render_config(template: str, webhook_url: str, wow_dir: str, webhooks: dict[str, str] | None = None) -> str:
-    text = re.sub(r'(?m)^webhook_url\s*=.*$', lambda _: f"webhook_url = {toml_string(webhook_url)}", template, count=1)
-    text = re.sub(r'(?m)^wow_dir\s*=.*$', lambda _: f"wow_dir = {toml_string(wow_dir)}", text, count=1)
-    if webhooks:
-        entries = "".join(f"{event} = {toml_string(url)}\n" for event, url in webhooks.items())
-        text = re.sub(r'(?m)^\[webhooks\]\n(?:#.*\n)*', lambda m: m.group(0) + entries, text, count=1)
-    return text
+    """config.toml from the template; webhook_url is the default webhook, webhooks are keyed by event."""
+    text = re.sub(r'(?m)^wow_dir\s*=.*$', lambda _: f"wow_dir = {toml_string(wow_dir)}", template, count=1)
+    return set_webhooks(text, webhook_url, webhooks or {})
+
+
+def _section(text: str, name: str) -> re.Match | None:
+    return re.search(rf'(?ms)^\[{re.escape(name)}\][^\n]*\n(.*?)(?=^\[|\Z)', text)
+
+
+def _key_line(key: str) -> re.Pattern:
+    # key = value, keeping whatever follows the value (an inline comment)
+    return re.compile(rf'''(?m)^({re.escape(key)}\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^\s#]+)''')
+
+
+def set_value(text: str, section: str, key: str, value: str, drop: tuple[str, ...] = ()) -> str:
+    """Set key to value (TOML) in [section], keeping comments; lines for the keys in drop are removed."""
+    match = _section(text, section)
+    if match is None:
+        return text.rstrip("\n") + f"\n\n[{section}]\n{key} = {value}\n"
+    body = match.group(1)
+    for old in drop:
+        body = re.sub(rf'(?m)^{re.escape(old)}\s*=.*\n?', "", body)
+    if _key_line(key).search(body):
+        body = _key_line(key).sub(lambda m: m.group(1) + value, body, count=1)
+    else:
+        comments = re.match(r'(?:#.*\n)*', body).end()  # after the section's leading comments
+        body = body[:comments] + f"{key} = {value}\n" + body[comments:]
+    return text[:match.start(1)] + body + text[match.end(1):]
 
 
 def set_webhook(text: str, event: str, url: str) -> str:
-    """Set one per-event webhook in config.toml text, keeping everything else (comments included)."""
-    line = f"{event} = {toml_string(url)}"
-    section = re.search(r'(?ms)^\[webhooks\][^\n]*\n(.*?)(?=^\[|\Z)', text)
-    if section is None:
-        return text.rstrip("\n") + f"\n\n[webhooks]\n{line}\n"
-    body = section.group(1)
-    existing = re.compile(rf'(?m)^{re.escape(event)}\s*=.*$')
-    if existing.search(body):
-        body = existing.sub(lambda _: line, body, count=1)
-    else:
-        comments = re.match(r'(?:#.*\n)*', body).end()  # after the section's leading comments
-        body = body[:comments] + line + "\n" + body[comments:]
-    return text[:section.start(1)] + body + text[section.end(1):]
+    """Set one event's webhook in config.toml text, keeping everything else (comments included)."""
+    return set_value(text, "webhooks", config.NAMES[event], toml_string(url), drop=(event,))
+
+
+def _drop_top_level_webhook_url(text: str) -> str:
+    """Remove the old top-level webhook_url line and the comments right above it."""
+    first_table = re.search(r'(?m)^\[', text)
+    head, tail = (text[:first_table.start()], text[first_table.start():]) if first_table else (text, "")
+    head = re.sub(r'(?m)(?:^#.*\n)*^webhook_url\s*=.*\n(?:[ \t]*\n)?', "", head, count=1)
+    return head + tail
+
+
+def set_webhooks(text: str, webhook_url: str, webhooks: dict[str, str]) -> str:
+    """Set the default and per-event webhooks in config.toml text, keeping everything else."""
+    text = set_value(_drop_top_level_webhook_url(text), "webhooks", "default", toml_string(webhook_url))
+    for event, url in webhooks.items():
+        text = set_webhook(text, event, url)
+    return text
+
+
+def upgrade_names(text: str) -> str:
+    """Rewrite a config.toml from an older version with the current names, keeping the settings and comments."""
+    try:
+        old_default = str(tomllib.loads(text).get("webhook_url") or "")
+    except tomllib.TOMLDecodeError:
+        return text
+    text = _drop_top_level_webhook_url(text)
+    if old_default:
+        text = set_value(text, "webhooks", "default", toml_string(old_default))
+    for section, renames in (("webhooks", config.NAMES), ("notify", config.NAMES), ("mentions", {"pvp": "pvp_alerts"})):
+        match = _section(text, section)
+        if match is None:
+            continue
+        body = match.group(1)
+        for old, new in renames.items():
+            if not _key_line(new).search(body):
+                body = re.sub(rf'(?m)^{re.escape(old)}(\s*=)', lambda m: new + m.group(1), body, count=1)
+        text = text[:match.start(1)] + body + text[match.end(1):]
+    return text
 
 
 def ask_webhook_url(ask: Callable[[str], str] = input) -> str:
@@ -95,7 +145,7 @@ def _ask_team_code(ask: Callable[[str], str]) -> tuple[str, dict[str, str]]:
 
 
 def _ask_webhooks(ask: Callable[[str], str], step: str = "Step 1 of 2") -> tuple[str, dict[str, str]]:
-    """Returns the main webhook_url and any per-event webhooks that differ from it."""
+    """Returns the default webhook and the per-event webhooks."""
     print(f"\n{step}: Discord channels")
     print("  1. Paste a team code (your guild posts one in Discord)")
     print("  2. Send everything to one channel of your own")
@@ -113,27 +163,14 @@ def _ask_webhooks(ask: Callable[[str], str], step: str = "Step 1 of 2") -> tuple
     previous = ""
     for event, label in CHANNELS:
         urls[event] = previous = _ask_url(ask, f"  {label}: ", previous)
-    urls["flag"] = urls["pvp"]
-    return urls["death"], {event: url for event, url in urls.items() if url != urls["death"]}
-
-
-def set_webhooks(text: str, webhook_url: str, webhooks: dict[str, str]) -> str:
-    """Set webhook_url and the per-event webhooks in config.toml text, keeping everything else."""
-    line = f"webhook_url = {toml_string(webhook_url)}"
-    if re.search(r'(?m)^webhook_url\s*=', text):
-        text = re.sub(r'(?m)^webhook_url\s*=.*$', lambda _: line, text, count=1)
-    else:
-        text = line + "\n" + text
-    for event, url in webhooks.items():
-        text = set_webhook(text, event, url)
-    return text
+    return "", urls  # PvP flag notices follow the PvP alerts channel
 
 
 def add_webhooks(config_path: Path, ask: Callable[[str], str] = input) -> None:
     """For a config.toml without webhooks: ask for them and save, keeping the other settings."""
     print("This version no longer has the team's Discord channels built in.")
     webhook, webhooks = _ask_webhooks(ask, "One question")
-    text = config_path.read_text(encoding="utf-8-sig")
+    text = upgrade_names(config_path.read_text(encoding="utf-8-sig"))
     config_path.write_text(set_webhooks(text, webhook, webhooks), encoding="utf-8")
     print(f"\nSaved {config_path}\n")
 

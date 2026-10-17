@@ -39,7 +39,10 @@ class SetupWizard(unittest.TestCase):
     def test_separate_channels(self):
         gold, deaths, level, pvp, kills = (f"{WEBHOOK}/{n}" for n in ("gold", "deaths", "level", "pvp", "kills"))
         cfg = self.run_wizard(["3", deaths, level, pvp, kills, gold, "1"], [self.wow])
-        self.assertEqual(cfg.webhook_url, deaths)
+        text = (self.tmp / "config.toml").read_text(encoding="utf-8")
+        for name, url in [("deaths", deaths), ("level_ups", level), ("pvp_alerts", pvp), ("pvp_kills", kills),
+                          ("gold_summary", gold)]:
+            self.assertIn(f"\n{name} = '{url}'", text)
         for event, url in [("death", deaths), ("level", level), ("pvp", pvp), ("flag", pvp), ("kill", kills),
                            ("summary", gold)]:
             self.assertEqual(cfg.webhook_for(event), url, event)
@@ -49,7 +52,9 @@ class SetupWizard(unittest.TestCase):
         cfg = self.run_wizard(["3", WEBHOOK, "", other, "", "", "1"], [self.wow])
         self.assertEqual(cfg.webhook_for("level"), WEBHOOK)
         self.assertEqual(cfg.webhook_for("summary"), other)
-        self.assertEqual(cfg.webhooks, {"pvp": other, "kill": other, "summary": other, "flag": other})
+        self.assertEqual(cfg.webhooks, {"death": WEBHOOK, "level": WEBHOOK, "pvp": other, "kill": other,
+                                        "summary": other})
+        self.assertEqual(cfg.webhook_for("flag"), other)
 
     def test_pasted_path_with_quotes_and_apostrophe(self):
         odd = self.tmp / "Bob's Games" / "_forever_"
@@ -124,25 +129,56 @@ class SetWebhook(unittest.TestCase):
         path.write_text(setup_wizard.render_config(EXAMPLE, WEBHOOK, WOW, webhooks), encoding="utf-8")
         return path
 
-    def test_adds_new_channel_keeping_comments_and_others(self):
+    def test_sets_one_channel_keeping_comments_and_others(self):
         text = setup_wizard.render_config(EXAMPLE, WEBHOOK, WOW, {"pvp": WEBHOOK + "/pvp"})
         out = setup_wizard.set_webhook(text, "kill", WEBHOOK + "/kills")
-        self.assertEqual(out.replace("kill = '" + WEBHOOK + "/kills'\n", ""), text)  # only that line added
+        # only that value changes; its comment stays
+        self.assertEqual(out, text.replace('pvp_kills = ""', "pvp_kills = '" + WEBHOOK + "/kills'"))
+        self.assertIn("pvp_kills = '" + WEBHOOK + "/kills'      # 🗡️", out)
         path = Path(tempfile.mkdtemp()) / "config.toml"
         path.write_text(out, encoding="utf-8")
         cfg = config.load(path)
         self.assertEqual(cfg.webhook_for("kill"), WEBHOOK + "/kills")
         self.assertEqual(cfg.webhook_for("pvp"), WEBHOOK + "/pvp")
+        self.assertEqual(cfg.webhook_for("death"), WEBHOOK)
 
-    def test_replaces_existing_line(self):
+    def test_replaces_existing_line_and_old_name(self):
         text = setup_wizard.render_config(EXAMPLE, WEBHOOK, WOW, {"kill": WEBHOOK + "/old"})
         out = setup_wizard.set_webhook(text, "kill", WEBHOOK + "/new")
         self.assertNotIn("/old", out)
-        self.assertEqual(out.count("kill = '"), 1)
+        self.assertEqual(out.count("pvp_kills = '"), 1)
+        old = setup_wizard.set_webhook("wow_dir = 'y'\n[webhooks]\nkill = 'https://old'\n", "kill", WEBHOOK)
+        self.assertEqual(old, "wow_dir = 'y'\n[webhooks]\npvp_kills = '" + WEBHOOK + "'\n")
 
     def test_creates_section_if_missing(self):
-        out = setup_wizard.set_webhook("webhook_url = 'x'\nwow_dir = 'y'\n", "kill", WEBHOOK)
-        self.assertIn("[webhooks]\nkill = '" + WEBHOOK + "'", out)
+        out = setup_wizard.set_webhook("wow_dir = 'y'\n", "kill", WEBHOOK)
+        self.assertIn("[webhooks]\npvp_kills = '" + WEBHOOK + "'", out)
+
+    def test_upgrades_an_old_config_to_the_new_names(self):
+        old = ("# Copy this file to config.toml.\n\n"
+               "# REQUIRED: Discord webhook.\n# Keep it private.\nwebhook_url = 'https://discord.com/api/webhooks/1/d'\n\n"
+               "wow_dir = 'C:\\WoW'\n\n"
+               "[notify]\ndeath = true\nflag = false      # only sent if enabled in game\n\n"
+               "[mentions]\npvp = \"<@42>\"\n\n"
+               "[webhooks]\n# Optional per-event webhooks.\nkill = 'https://discord.com/api/webhooks/2/k'\n"
+               "flag = 'https://discord.com/api/webhooks/3/p'\npvp = 'https://discord.com/api/webhooks/3/p'\n")
+        new = setup_wizard.upgrade_names(old)
+        self.assertNotIn("webhook_url", new)
+        self.assertNotIn("REQUIRED: Discord webhook", new)
+        for line in ("deaths = true", "pvp_flag = false      # only sent", 'pvp_alerts = "<@42>"',
+                     "default = 'https://discord.com/api/webhooks/1/d'", "pvp_kills = 'https://discord.com/api/webhooks/2/k'",
+                     "pvp_flag = 'https://discord.com/api/webhooks/3/p'", "pvp_alerts = 'https://discord.com/api/webhooks/3/p'"):
+            self.assertIn("\n" + line, new)
+        path = Path(tempfile.mkdtemp()) / "config.toml"
+        for text in (old, new):
+            path.write_text(text, encoding="utf-8")
+            cfg = config.load(path)
+            self.assertEqual((cfg.webhook_for("death"), cfg.webhook_for("kill"), cfg.webhook_for("flag")),
+                             ("https://discord.com/api/webhooks/1/d", "https://discord.com/api/webhooks/2/k",
+                              "https://discord.com/api/webhooks/3/p"))
+            self.assertFalse(cfg.enabled("flag"))
+            self.assertEqual(cfg.pvp_mention, "<@42>")
+        self.assertEqual(setup_wizard.upgrade_names(new), new, "already upgraded: unchanged")
 
     def test_command_saves_and_posts_sample_to_that_channel(self):
         path = self.write_config()

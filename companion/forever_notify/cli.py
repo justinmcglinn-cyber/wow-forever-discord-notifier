@@ -38,6 +38,7 @@ def send_tests(cfg: config.Config) -> bool:
 
 def set_webhook(config_path: Path, channel: str, url: str | None, ask=input) -> int:
     """Change one channel's webhook in config.toml and post a sample there to prove it works."""
+    channel = config.ALIASES[channel]
     label = dict(setup_wizard.CHANNELS)[channel]
     if url is None:
         print(f"New webhook for {label}.")
@@ -97,7 +98,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("install-addon", help="reinstall the add-on in your WoW Interface\\AddOns folder, even if it's newer "
                    "(run does this automatically when needed)")
     hook_p = sub.add_parser("set-webhook", help="change one channel's webhook in config.toml, then post a sample there")
-    hook_p.add_argument("channel", choices=[event for event, _ in setup_wizard.CHANNELS])
+    names = [config.NAMES[event] for event, _ in setup_wizard.CHANNELS]
+    hook_p.add_argument("channel", choices=names + [event for event, _ in setup_wizard.CHANNELS],
+                        metavar="{" + ",".join(names) + "}")
     hook_p.add_argument("url", nargs="?", help="webhook URL (asked for if left out)")
     decode_p = sub.add_parser("decode", help="decode signal screenshots and print their payloads")
     decode_p.add_argument("files", nargs="+")

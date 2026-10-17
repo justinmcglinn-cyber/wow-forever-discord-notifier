@@ -41,7 +41,7 @@ The add-on switches the screenshot format to PNG on login, because JPEG compress
 ### 3. Companion (Windows)
 1. Download `ForeverNotify.exe` from the latest [release](../../releases) (or from the **build-exe** artifact of a recent Actions run), or build it yourself (see below).
 2. Put it in its own folder, e.g. `Documents\ForeverNotify`, and double-click it.
-3. The first time, it asks for your guild's team code, or, for your own channels, whether you want one Discord channel for everything or a separate channel per notification type (deaths, level ups, PvP alerts, gold summary) and the webhook URL(s). Then it asks for your WoW Forever folder (it offers any it finds). It saves `config.toml` next to the exe and posts a test message to each channel, saying which notifications will land there. Run `ForeverNotify.exe setup` to go through this again later. To change just one channel's webhook, run `ForeverNotify.exe set-webhook <channel>` (`death`, `level`, `pvp`, `kill` or `summary`): it asks for the URL, updates only that line in `config.toml` and posts a sample to that channel.
+3. The first time, it asks for your guild's team code, or, for your own channels, whether you want one Discord channel for everything or a separate channel per notification type (deaths, level ups, PvP alerts, gold summary) and the webhook URL(s). Then it asks for your WoW Forever folder (it offers any it finds). It saves `config.toml` next to the exe and posts a test message to each channel, saying which notifications will land there. Run `ForeverNotify.exe setup` to go through this again later. To change just one channel's webhook, run `ForeverNotify.exe set-webhook <channel>` (`deaths`, `level_ups`, `pvp_alerts`, `pvp_kills` or `gold_summary`): it asks for the URL, updates only that line in `config.toml` and posts a sample to that channel.
 4. Leave the window open while you play. Close it to stop.
 
 **Sharing with your team (team code):** the exe and this repo hold no webhooks, so everyone downloads the same public release. Set up your own `config.toml` with the team's channels, then run `py -3 make_team_hooks.py` in `companion\` (it reads `dist\config.toml`, or a path you give). It prints a team code (one line starting `FNTEAM1-`) and saves it to `dist\team_code.txt`. Post it somewhere only your team can see, e.g. a pinned message in a private channel. Teammates paste it at setup; it fills in every channel's webhook. The code is encrypted only against casual reading and secret scanners: anyone with it can post to your channels. If it leaks, delete and recreate the webhooks in Discord, make a new code and have everyone run `ForeverNotify.exe setup` again. A config from an older exe with the webhooks built in asks for the code on start-up and keeps its other settings.
@@ -59,7 +59,7 @@ Extra options (per-event channels, @mentions…) live in `config.toml`; open it 
 
 1. Install Python 3.11+ from python.org (tick "Add to PATH").
 2. In `companion\`, run `py -m pip install -r requirements.txt`.
-3. Copy `config.example.toml` to `config.toml`. Paste your webhook URL and set `wow_dir` to your Forever install folder (the one containing `Screenshots` and `WTF`).
+3. Copy `config.example.toml` to `config.toml`. Paste your webhook URL(s) under `[webhooks]` and set `wow_dir` to your Forever install folder (the one containing `Screenshots` and `WTF`).
 4. Run `py -m forever_notify test-webhook`. A sample of each notification should appear in Discord.
 5. Start the companion with `run.bat`, or `py -m forever_notify run`, and leave it running while you play.
 </details>
@@ -78,7 +78,19 @@ In game, type `/fnotify test`. Within a few seconds each channel should get a sa
 | `/fnotify preview` | Show the signal grid for 5 seconds without taking a screenshot |
 | `/fnotify debug` | Toggle debug output in chat |
 
-Companion options live in `config.toml`: per-event on/off, separate webhooks per event (e.g. a `#pvp` channel), and a Discord @mention on PvP alerts so your phone pings.
+Companion options live in `config.toml`: per-event on/off, separate webhooks per event (e.g. a `#pvp` channel), and a Discord @mention on PvP alerts so your phone pings. Its `[webhooks]` section names each channel:
+
+| Name | Messages |
+|---|---|
+| `default` | Any channel left empty below. Set only this for one channel for everything. |
+| `deaths` | 💀 Deaths, with the killer when known |
+| `level_ups` | ⬆️ Level-ups |
+| `pvp_alerts` | ⚔️ "Under attack" alerts |
+| `pvp_kills` | 🗡️ Your PvP kills and group battle reports |
+| `gold_summary` | 💰 Gold summary after logout |
+| `pvp_flag` | PvP flag on/off (only with `/fnotify flag` in game); empty = `pvp_alerts` |
+
+`[notify]` uses the same names (plus `test_messages`) to turn each kind off. Configs from versions before 0.1.11 (`webhook_url`, `death`, `kill`, `summary`…) still work.
 
 ## Limits
 

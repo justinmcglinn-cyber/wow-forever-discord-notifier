@@ -78,9 +78,8 @@ class TeamSetup(unittest.TestCase):
 
     def test_old_config_without_webhooks_asks_for_the_code_and_keeps_settings(self):
         # A config.toml written by a version with the team's webhooks built in.
-        template = setup_wizard.resource_path("config.example.toml").read_text(encoding="utf-8")
-        text = re.sub(r"(?m)^flag = true", "flag = false", setup_wizard.render_config(template, "", str(self.wow)))
-        self.path.write_text(text, encoding="utf-8")
+        self.path.write_text(f"webhook_url = ''\nwow_dir = '{self.wow}'\n[notify]\nflag = false\n[webhooks]\n",
+                             encoding="utf-8")
         with self.assertRaises(config.NoWebhookError):
             config.load(self.path)
 
@@ -92,6 +91,10 @@ class TeamSetup(unittest.TestCase):
         self.assertEqual(cfg.webhook_for("kill"), URL + "/kills")
         self.assertEqual(cfg.wow_dir, self.wow)
         self.assertFalse(cfg.enabled("flag"), "other settings kept")
+        text = self.path.read_text(encoding="utf-8")
+        self.assertNotIn("webhook_url", text)
+        self.assertIn("pvp_flag = false", text)
+        self.assertIn("pvp_kills = '" + URL + "/kills'", text)
 
     def test_run_asks_for_webhooks_when_config_has_none(self):
         template = setup_wizard.resource_path("config.example.toml").read_text(encoding="utf-8")
