@@ -1,6 +1,18 @@
-# wow-forever-discord-notifier
+# ForeverNotify
 
-Sends World of Warcraft: Forever events to a Discord channel as text messages:
+**World of Warcraft: Forever → Discord.** An add-on plus a small Windows app that posts your deaths, level-ups, PvP fights and kills, and a gold summary when you log out, to your guild's Discord channels as text, as they happen.
+
+It's built for guilds where everyone runs it: each player's events land in the shared channels, test messages tidy themselves away, and the app updates itself (after asking).
+
+## Quick start (joining a guild that already uses it)
+
+1. Download `ForeverNotify.exe` from the [latest release](../../releases/latest) and put it in its own folder, e.g. `Documents\ForeverNotify`.
+2. Double-click it. Paste your guild's **team code** when asked, then pick your WoW Forever folder. It installs the add-on and posts a test message to each channel; they delete themselves after about a minute.
+3. Leave the window open while you play.
+
+Windows SmartScreen may say the app is unrecognised, because it isn't code-signed: click **More info → Run anyway**. Setting up your guild's channels for the first time? See [Setup](#setup).
+
+## What it posts
 
 - 💀 **Death**: where you died, and who killed you (player or NPC) when known
 - ⬆️ **Level up**: new level, location, time played at the previous level (as in `/played`, so offline time doesn't count)
@@ -103,14 +115,11 @@ Companion options live in `config.toml`: per-event on/off, separate webhooks per
 - **Time played per level comes from the server's `/played` count.** The add-on asks for it at login and /reload (the "Total time played" lines this would print in chat are hidden; a `/played` you type still shows). If the server doesn't answer, the add-on's own count is used, but only for a level it saw from the start, so the first level-up after installing it, or after levelling without it, may have no time.
 - **The gold summary is posted about 30 seconds after logout.** The delay lets the companion tell a real logout from a `/reload`. If the game crashes, the session isn't saved and no summary is sent. If the companion wasn't running when you logged out, it posts that summary the next time it starts while WoW is closed (it remembers what it has posted in `state.json`, so nothing is sent twice).
 
-## First beta session checklist
+## Troubleshooting
 
-None of this has been run in the real client yet. On first use:
-
-1. Run `/fnotify test` and confirm a sample arrives in every channel and the signal screenshot is deleted.
-2. Run `/fnotify` and check no "Blocked by the game" lines are listed.
-3. Die once, level once and log out once, and check each message.
-4. If anything fails, turn on `/fnotify debug`, run the companion with `ForeverNotify.exe -v run` (or `py -m forever_notify -v run`), and share the output.
+1. **Nothing in Discord?** Type `/fnotify test` in game. A sample should reach every channel within a few seconds, and the companion window should log it. If the window shows nothing, check the add-on is enabled at character select and that the companion points at the right WoW Forever folder (`ForeverNotify.exe setup`).
+2. **Something missing or odd?** Type `/fnotify` and check no "Blocked by the game" lines are listed.
+3. **Reporting a problem:** turn on `/fnotify debug`, run the companion with `ForeverNotify.exe -v run` (or `py -m forever_notify -v run`), reproduce it, and share what the window printed.
 
 ## Development
 
