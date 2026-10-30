@@ -181,10 +181,13 @@ function Signal.EnsureLosslessFormat()
 end
 
 -- Shows the grid for a few seconds without taking a screenshot (debugging).
+-- Returns false, doing nothing, while a real notification is being captured.
 function Signal.Preview(payload, seconds)
+  if busy then return false end
   Draw(Signal.Encode(payload))
   frame:Show()
   C_Timer.After(seconds or 5, function()
     if not busy then frame:Hide() end
   end)
+  return true
 end

@@ -15,6 +15,15 @@ jobs:
             echo "A Discord webhook URL is committed. Remove it and recreate that webhook in Discord."
             exit 1
           fi
+      - name: Release tag matches the add-on version (version tags only)
+        # The updater compares the tag with the version in the exe; a mismatch would offer the same update forever.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^## Version: *//p' addon/ForeverNotify/ForeverNotify.toc | tr -d '\r')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match '## Version: $version' in ForeverNotify.toc. Bump the .toc, commit, and tag that commit."
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

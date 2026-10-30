@@ -415,6 +415,21 @@ check(prev and math.abs(prev - 300) <= 1, "own count for a level seen from the s
 -- Combat log stays off in auto mode on a Midnight-era client -------------------------
 check(not ns.PvP.CombatLogAvailable(), "combat log reported off in auto mode")
 
+-- Tracking tables are pruned over a long session ------------------------------------
+for unit in pairs(S.units) do
+  if unit ~= "player" then S.units[unit] = nil end
+end
+S.Advance(200)
+ns.PvP.Check()
+check(ns.PvP.TrackedCount() == 0, "old players pruned: " .. ns.PvP.TrackedCount())
+
+-- Preview never overwrites a notification being captured ------------------------------
+ns.Signal.Send("t=TEST")
+check(ns.Signal.Preview("t=TEST", 5) == false, "preview refused while a signal is being captured")
+S.Advance(2)
+check(ns.Signal.Preview("t=TEST", 1) == true, "preview shown when idle")
+S.Advance(2)
+
 -- Outputs -----------------------------------------------------------------------
 local records = {}
 for i, s in ipairs(S.screenshots) do

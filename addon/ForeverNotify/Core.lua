@@ -122,8 +122,11 @@ SlashCmdList.FOREVERNOTIFY = function(msg)
     ns.NewPayload("TEST"):SetLocation(ns.Location()):Send()
     ns.Print("Test notification sent. Check Discord in a few seconds.")
   elseif cmd == "preview" then
-    ns.Signal.Preview(ns.NewPayload("TEST"):Serialize(ns.Signal.MAX_PAYLOAD), 5)
-    ns.Print("Showing the signal grid for 5 seconds (no screenshot).")
+    if ns.Signal.Preview(ns.NewPayload("TEST"):Serialize(ns.Signal.MAX_PAYLOAD), 5) then
+      ns.Print("Showing the signal grid for 5 seconds (no screenshot).")
+    else
+      ns.Print("A notification is being sent right now; try again in a moment.")
+    end
   elseif cmd == "debug" then
     ns.db.settings.debug = not ns.db.settings.debug
     ns.Print("Debug output " .. OnOff(ns.db.settings.debug))

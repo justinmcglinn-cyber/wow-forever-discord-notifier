@@ -201,6 +201,14 @@ local function CountAssist(victim)
   Activity()
 end
 
+-- Forgets credited corpses once they're too old to be matched again.
+local function PruneClaimed()
+  local now = GetTime()
+  for name, deadAt in pairs(claimed) do
+    if now - deadAt > DEAD_WINDOW * 4 then claimed[name] = nil end
+  end
+end
+
 -- Was `name` your target while alive at, or shortly before, `deadAt`?
 local function WasMine(name, deadAt)
   local at = ns.PvP.TargetedAliveAt(name)
@@ -262,6 +270,7 @@ ns.On("PLAYER_PVP_KILLS_CHANGED", function()
     lastSessionKills = kills
     if namedAt >= changedAt - FALLBACK_DELAY then return end -- a naming chat message covered it
     ns.PvP.Scan()
+    PruneClaimed()
     local solo = not InGroup()
     for _ = 1, missed do
       local mine, newest

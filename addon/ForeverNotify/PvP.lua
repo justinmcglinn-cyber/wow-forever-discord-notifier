@@ -86,6 +86,34 @@ function PvP.RecentlyDead(window)
   return list
 end
 
+-- Drops entries too old to matter, so these tables stay small over a long
+-- session in a busy zone.
+local PRUNE_EVERY = 30
+local lastPrune = -math.huge
+
+local function Prune(now)
+  if now - lastPrune < PRUNE_EVERY then return end
+  lastPrune = now
+  for name, s in pairs(seen) do
+    if now - s.at > SEEN_TTL then seen[name] = nil end
+  end
+  for name, at in pairs(targetedAlive) do
+    if now - at > SEEN_TTL then targetedAlive[name] = nil end
+  end
+  for name, at in pairs(reported) do
+    if now - at > REPORT_AGAIN then reported[name] = nil end
+  end
+end
+
+-- Sizes of the tracking tables (for tests and debugging).
+function PvP.TrackedCount()
+  local n = 0
+  for _, t in ipairs({ seen, targetedAlive, reported, attackers }) do
+    for _ in pairs(t) do n = n + 1 end
+  end
+  return n
+end
+
 -- Records hostile players (and, for naming killers without the combat log,
 -- hostile NPCs) that are targeting you, and remembers every hostile player seen.
 -- Returns the number of hostile players with visible nameplates.
@@ -94,6 +122,7 @@ local function ScanUnits()
   for i = 1, 40 do units[#units + 1] = "nameplate" .. i end
   local hostiles = 0
   local now = GetTime()
+  Prune(now)
   for _, unit in ipairs(units) do
     if IsDeadEnemyPlayer(unit) then -- checked first: a corpse is never an attacker
       local name = ns.call(UnitName, unit)

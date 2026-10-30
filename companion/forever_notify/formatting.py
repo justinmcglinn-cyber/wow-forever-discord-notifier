@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -60,6 +61,15 @@ GOLD_CATEGORIES = {
     "guildbank": "Guild bank",
     "other": "Other",
 }
+
+
+def to_int(value: Any, default: Any = 0) -> Any:
+    """value as a whole number, or default if it isn't one: one odd field must never stop the companion."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return int(number) if math.isfinite(number) else default
 
 
 def money(copper: int | float, signed: bool = False) -> str:
@@ -158,12 +168,12 @@ def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
         embed = _embed(kind, f"💀 {name} died", p, how, [("Location", location(p), False)])
     elif kind == "LEVEL":
         fields = [("Location", location(p), False)]
-        if p.get("prev"):
-            new = p.get("new", "")
-            label = f"Played at level {int(new) - 1}" if new.isdigit() else "Played on previous level"
-            fields.append((label, duration(float(p["prev"])), True))
-        if p.get("sess"):
-            fields.append(("This session", duration(float(p["sess"])), True))
+        prev, sess, new = to_int(p.get("prev"), None), to_int(p.get("sess"), None), to_int(p.get("new"), None)
+        if prev is not None:
+            label = f"Played at level {new - 1}" if new else "Played on previous level"
+            fields.append((label, duration(prev), True))
+        if sess is not None:
+            fields.append(("This session", duration(sess), True))
         embed = _embed(kind, f"⬆️ {name} reached level {p.get('new', '?')}", p, fields=fields)
     elif kind == "PVP":
         attackers = [unit(p[k]) for k in ("a1", "a2", "a3") if p.get(k)]
@@ -183,10 +193,7 @@ def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
         victim = p.get("v", "")
         victim_name = victim.split("|")[0] if victim else ""
         title = f"🗡️ {name} killed {victim_name}" if victim_name else f"🗡️ {name} scored an honorable kill"
-        try:
-            multi, streak = int(p.get("multi") or 1), int(p.get("streak") or 1)
-        except ValueError:
-            multi, streak = 1, 1
+        multi, streak = to_int(p.get("multi"), 1) or 1, to_int(p.get("streak"), 1) or 1
         fields = []
         if "|" in victim:
             fields.append(("Victim", unit(victim), False))
@@ -200,18 +207,13 @@ def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
             fields.append(("Your health", f"{p['hp']}%", True))
         embed = _embed(kind, title, p, "\n".join(kill_callouts(multi, streak)), fields)
     elif kind == "BATTLE":
-        def count(key):
-            try:
-                return int(p.get(key) or 0)
-            except ValueError:
-                return 0
-        total, mine = count("k"), count("mine")
+        total, mine = to_int(p.get("k")), to_int(p.get("mine"))
         title = f"⚔️ Battle report: {name}'s group took down {total} {'enemy' if total == 1 else 'enemies'}"
         fields = [("Your kills", str(mine), True), ("Group kills", str(total), True)]
         if p.get("hon"):
             fields.append(("Honor", f"+{p['hon']}", True))
         if p.get("dur"):
-            fields.append(("Fight length", duration(count("dur")), True))
+            fields.append(("Fight length", duration(to_int(p["dur"])), True))
         if p.get("streak"):
             fields.append(("Your streak", p["streak"], True))
         if p.get("v"):
@@ -242,10 +244,10 @@ def _breakdown(bucket: Any) -> str:
 
 
 def format_summary(s: dict[str, Any]) -> dict:
-    start_money = int(s.get("startMoney", 0))
-    end_money = int(s.get("endMoney", start_money))
+    start_money = to_int(s.get("startMoney"))
+    end_money = to_int(s.get("endMoney"), start_money)
     net = end_money - start_money
-    length = max(0, int(s.get("stop", 0)) - int(s.get("start", 0)))
+    length = max(0, to_int(s.get("stop")) - to_int(s.get("start")))
     hours = length / 3600
 
     rate = f" ({money(net / hours, signed=True)}/h)" if hours >= 0.05 else ""
@@ -264,7 +266,7 @@ def format_summary(s: dict[str, Any]) -> dict:
         fields.append(("Deaths", str(s["deaths"]), True))
     if s.get("accountMoney") is not None:
         chars = s.get("accountChars", 0)
-        fields.append(("All characters", f"{money(s['accountMoney'])} across {chars} character"
+        fields.append(("All characters", f"{money(to_int(s['accountMoney']))} across {chars} character"
                        + ("s" if chars != 1 else ""), False))
 
     p = {"c": s.get("char", "Unknown"), "r": s.get("realm", "?"), "lv": s.get("endLevel"), "ts": s.get("stop")}

@@ -246,23 +246,28 @@ def ask_with_timeout(prompt: str, seconds: float | None) -> str | None:
     return sys.stdin.readline().strip()
 
 
-class SkippedVersion:
-    """A release the player chose to skip, kept in update.json next to config.toml."""
+class UpdateState:
+    """update.json next to config.toml: the release the player skipped ("skip") and the last one installed
+    ("installed"), so a release whose exe carries an older version number isn't installed over and over."""
 
     def __init__(self, path: Path | None):
         self._path = path
 
-    def get(self) -> str:
+    def _load(self) -> dict:
         try:
-            return str(json.loads(self._path.read_text(encoding="utf-8")).get("skip", "")) if self._path else ""
-        except (OSError, ValueError, AttributeError):
-            return ""
+            data = json.loads(self._path.read_text(encoding="utf-8")) if self._path else {}
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
 
-    def set(self, tag: str) -> None:
+    def get(self, key: str) -> str:
+        return str(self._load().get(key, ""))
+
+    def set(self, **values: str) -> None:
         if not self._path:
             return
         try:
-            self._path.write_text(json.dumps({"skip": tag}), encoding="utf-8")
+            self._path.write_text(json.dumps({**self._load(), **values}), encoding="utf-8")
         except OSError as e:
             log.warning("Could not save %s: %s", self._path, e)
 
@@ -312,9 +317,15 @@ def offer_update(state_dir: Path | None, frozen: bool, exe: Path | None = None, 
         if force:
             report(f"ForeverNotify v{version_text(current)} is the latest version.")
         return False
-    skipped = SkippedVersion(state_dir / "update.json" if state_dir else None)
-    if not force and skipped.get() == release.tag:
+    state = UpdateState(state_dir / "update.json" if state_dir else None)
+    if not force and state.get("skip") == release.tag:
         log.info("ForeverNotify %s is available (skipped). Run 'ForeverNotify.exe update' to install it.", release.tag)
+        return False
+    if not force and state.get("installed") == release.tag:
+        # Installed before, yet this exe still reports an older version: the release's exe is mislabelled.
+        # Offering it again would loop forever.
+        log.warning("Release %s was installed but reports v%s; not offering it again. Download it yourself from %s",
+                    release.tag, version_text(current), release.page)
         return False
 
     header = f"ForeverNotify {release.tag} is available (you have v{version_text(current)})."
@@ -338,7 +349,7 @@ def offer_update(state_dir: Path | None, frozen: bool, exe: Path | None = None, 
         return False
     answer = answer.strip().lower()
     if answer in ("s", "skip"):
-        skipped.set(release.tag)
+        state.set(skip=release.tag)
         report(f"Skipping {release.tag}. Run 'ForeverNotify.exe update' if you change your mind.")
         return False
     if answer not in ("", "y", "yes"):
@@ -349,6 +360,7 @@ def offer_update(state_dir: Path | None, frozen: bool, exe: Path | None = None, 
     except UpdateError as e:
         report(f"Update failed: {e}. Carrying on with v{version_text(current)}.")
         return False
+    state.set(installed=release.tag)
     report(f"Updated to {release.tag}. Restarting…")
     restart(exe, list(argv or []))
     return True

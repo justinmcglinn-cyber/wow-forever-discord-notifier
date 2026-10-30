@@ -130,8 +130,10 @@ class PostedSummaries:
             return
         self._items = (self._items + [key])[-self.KEEP:]
         if self._path:
-            try:
-                self._path.write_text(json.dumps({"posted_summaries": self._items}), encoding="utf-8")
+            try:  # via a temporary file, so a crash mid-write can't leave it half-written
+                tmp = self._path.with_name(self._path.name + ".tmp")
+                tmp.write_text(json.dumps({"posted_summaries": self._items}), encoding="utf-8")
+                tmp.replace(self._path)
             except OSError as e:
                 log.warning("Could not save %s: %s", self._path, e)
 
@@ -244,7 +246,7 @@ class Notifier:
 
     def _cancel_summary_if_still_playing(self, key: str) -> None:
         pending = self._pending_summaries.get(key)
-        if pending and self._last_signal_ts.get(key, 0) >= int(pending[1].get("stop", 0)):
+        if pending and self._last_signal_ts.get(key, 0) >= formatting.to_int(pending[1].get("stop")):
             log.info("%s is still in game (UI reload); summary discarded", key)
             self._posted_summaries.add((pending[1].get("id"), pending[1].get("stop")))
             del self._pending_summaries[key]
@@ -254,7 +256,12 @@ class Notifier:
             if now >= deadline:
                 del self._pending_summaries[key]
                 self._posted_summaries.add((summary.get("id"), summary.get("stop")))
-                self.send(self.config.webhook_for("summary"), formatting.format_summary(summary))
+                try:
+                    body = formatting.format_summary(summary)
+                except Exception:  # a bad summary is skipped, never retried every tick
+                    log.exception("Couldn't format the gold summary for %s; skipped it", key)
+                    continue
+                self.send(self.config.webhook_for("summary"), body)
 
 
 def _list_images(folder: Path) -> Callable[[], list[Path]]:
@@ -286,7 +293,10 @@ def process_screenshot(path: Path, notifier: Notifier, delete: bool, cache: Scre
             cache.add(path)  # so the next start-up sweep doesn't read it again
         return True
     log.info("Signal %s from %s%s", payload.get("t"), path.name, _timing(path))
-    notifier.handle_signal(payload)
+    try:
+        notifier.handle_signal(payload)
+    except Exception:  # one bad signal must not stop the companion
+        log.exception("Couldn't handle the %s signal in %s; skipped it", payload.get("t"), path.name)
     if delete:
         try:
             path.unlink()
@@ -338,14 +348,22 @@ def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bo
             now = time.time()
             for path, payload in sweep.drain():
                 log.info("Signal %s from %s (saved before start-up)", payload.get("t"), path.name)
-                notifier.handle_late_signal(payload)
+                try:
+                    notifier.handle_late_signal(payload)
+                except Exception:
+                    log.exception("Couldn't handle the %s signal in %s; skipped it", payload.get("t"), path.name)
                 if config.delete_signal_screenshots:
                     try:
                         path.unlink()
                     except OSError as e:
                         log.warning("Could not delete %s: %s", path, e)
             for path in screenshots.poll(now):
-                if process_screenshot(path, notifier, config.delete_signal_screenshots, cache):
+                try:
+                    handled = process_screenshot(path, notifier, config.delete_signal_screenshots, cache)
+                except Exception:  # never retry a file that breaks the loop
+                    log.exception("Couldn't process %s; skipped it", path.name)
+                    handled = True
+                if handled:
                     screenshots.done(path)
                 else:
                     screenshots.retry_or_drop(path, now)
@@ -355,7 +373,10 @@ def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bo
                 except OSError as e:
                     log.warning("Could not read %s: %s", path, e)
                     continue
-                notifier.handle_saved_variables(text, now)
+                try:
+                    notifier.handle_saved_variables(text, now)
+                except Exception:
+                    log.exception("Couldn't read the logout summary in %s; skipped it", path)
             notifier.tick(now)
             if now - last_cache_save >= CACHE_SAVE_INTERVAL:
                 cache.save()
