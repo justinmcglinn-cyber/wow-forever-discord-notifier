@@ -25,7 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import addon_install
+from . import addon_install, jsonstate
+from .addon_install import parse_version, version_text
 from .discord import USER_AGENT
 
 log = logging.getLogger(__name__)
@@ -54,15 +55,6 @@ class Release:
     sha256: str  # expected SHA-256 of that file, lower-case hex; "" if GitHub gave none
     is_zip: bool
     page: str
-
-
-def parse_version(text: str | None) -> tuple[int, ...] | None:
-    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)", (text or "").strip())
-    return tuple(int(part) for part in match.group(1).split(".")) if match else None
-
-
-def version_text(version: tuple[int, ...] | None) -> str:
-    return ".".join(map(str, version)) if version else "unknown"
 
 
 def current_version() -> tuple[int, ...] | None:
@@ -253,23 +245,11 @@ class UpdateState:
     def __init__(self, path: Path | None):
         self._path = path
 
-    def _load(self) -> dict:
-        try:
-            data = json.loads(self._path.read_text(encoding="utf-8")) if self._path else {}
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
     def get(self, key: str) -> str:
-        return str(self._load().get(key, ""))
+        return str(jsonstate.load(self._path, {}).get(key, ""))
 
     def set(self, **values: str) -> None:
-        if not self._path:
-            return
-        try:
-            self._path.write_text(json.dumps({**self._load(), **values}), encoding="utf-8")
-        except OSError as e:
-            log.warning("Could not save %s: %s", self._path, e)
+        jsonstate.save(self._path, {**jsonstate.load(self._path, {}), **values})
 
 
 def install(release: Release, exe: Path, report=print, opener=urllib.request.urlopen) -> None:

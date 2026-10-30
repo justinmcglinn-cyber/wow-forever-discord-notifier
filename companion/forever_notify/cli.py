@@ -6,7 +6,6 @@ import argparse
 import json
 import logging
 import sys
-import time
 import tomllib
 from pathlib import Path
 
@@ -24,7 +23,7 @@ def default_config_path() -> Path:
 
 def pending_deletes(cfg: config.Config) -> discord.Expiring:
     """Test messages waiting to delete themselves, kept next to config.toml so a restart still removes them."""
-    return discord.Expiring(cfg.state_file.with_name("pending_deletes.json") if cfg.state_file else None)
+    return discord.Expiring(cfg.state_path("pending_deletes.json"))
 
 
 def post_sample(url: str, body: dict, expiring: discord.Expiring) -> None:
@@ -50,7 +49,7 @@ def send_tests(cfg: config.Config, expiring: discord.Expiring | None = None) -> 
     """Post a sample of each notification to its channel. Returns True if all arrived."""
     expiring = expiring if expiring is not None else pending_deletes(cfg)
     ok = True
-    samples = formatting.sample_messages({"c": "Companion", "r": "PC", "ts": str(int(time.time()))}, cfg.pvp_mention)
+    samples = formatting.sample_messages({}, cfg.pvp_mention)  # as from character "Companion", realm "PC"
     for event, label in setup_wizard.CHANNELS:
         try:
             post_sample(cfg.webhook_for(event), samples[event], expiring)
@@ -73,7 +72,7 @@ def set_webhook(config_path: Path, channel: str, url: str | None, ask=input) -> 
             print("\nCancelled; config.toml not changed.", file=sys.stderr)
             return 2
     url = url.strip().strip('"')
-    if not url.startswith(setup_wizard.WEBHOOK_PREFIXES):
+    if not config.is_webhook_url(url):
         print("That doesn't look like a Discord webhook URL (it should start with https://discord.com/api/webhooks/).",
               file=sys.stderr)
         return 2
@@ -90,8 +89,7 @@ def set_webhook(config_path: Path, channel: str, url: str | None, ask=input) -> 
     print(f"Saved the {label} webhook to {config_path}.")
 
     cfg = config.load(config_path)
-    sample = formatting.sample_messages({"c": "Companion", "r": "PC", "ts": str(int(time.time()))},
-                                        cfg.pvp_mention)[channel]
+    sample = formatting.sample_messages({}, cfg.pvp_mention)[channel]
     expiring = pending_deletes(cfg)
     try:
         post_sample(cfg.webhook_for(channel), sample, expiring)
@@ -110,10 +108,7 @@ def confirm(prompt: str) -> bool:
         return False
 
 
-def main(argv: list[str] | None = None) -> int:
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ForeverNotify.exe" if FROZEN else "forever_notify", description="WoW Forever → Discord notifier companion")
     parser.add_argument("-c", "--config", type=Path, default=default_config_path(), help="path to config.toml")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -132,36 +127,35 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("update", help="check for a newer ForeverNotify and install it (asks first)")
     decode_p = sub.add_parser("decode", help="decode signal screenshots and print their payloads")
     decode_p.add_argument("files", nargs="+")
-    args = parser.parse_args(argv)
+    return parser
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 
-    if args.command == "decode":
-        for path in args.files:
-            print(path, json.dumps(decode_file(path), ensure_ascii=False))
-        return 0
+def _interactive() -> bool:
+    return bool(sys.stdin and sys.stdin.isatty())
 
+
+def _offer_update(args, restart_args: list[str], **kwargs) -> bool:
+    """Offer a newer release. True if the new version has started (in this window), so this copy should end."""
+    if not updater.offer_update(args.config.parent, FROZEN, argv=restart_args, **kwargs):
+        return False
     if FROZEN:
-        updater.cleanup_leftovers(Path(sys.executable))  # the previous exe, after an update
-    restart_args = ["-c", str(args.config)] + (["-v"] if args.verbose else []) + ["run"]
-    if args.command == "update":
-        if updater.offer_update(args.config.parent, FROZEN, argv=restart_args, force=True) and FROZEN:
-            updater.exit_now()  # the new version has started in this window
-        return 0
+        updater.exit_now()  # nothing more may run in the replaced exe
+    return True
 
+
+def _prepare_config(args) -> tuple[config.Config, bool] | int:
+    """Restore, create or upgrade config.toml as needed and load it: (config, freshly set up) or an exit code."""
     baked = setup_wizard.resource_path(BAKED_CONFIG)
     if not args.config.exists() and args.command != "setup" and baked.is_file():
         args.config.write_bytes(baked.read_bytes())
         print(f"No config found; restored the settings built into this exe to {args.config}.")
 
     fresh_setup = False
-    wants_setup = args.command == "setup" or (not args.config.exists() and sys.stdin and sys.stdin.isatty())
     if args.command == "setup" and args.config.exists():
         if not confirm(f"{args.config} already exists. Replace it with new settings? (y/N): "):
             print("Kept your existing config.")
             return 0
-    if wants_setup:
+    if args.command == "setup" or (not args.config.exists() and _interactive()):
         try:
             setup_wizard.run(args.config)
         except (EOFError, KeyboardInterrupt):
@@ -174,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
             cfg = config.load(args.config)
         except config.NoWebhookError:
             # A config from a version with the team's webhooks built in: ask for them now.
-            if not (sys.stdin and sys.stdin.isatty()):
+            if not _interactive():
                 raise
             setup_wizard.add_webhooks(args.config)
             cfg = config.load(args.config)
@@ -185,13 +179,58 @@ def main(argv: list[str] | None = None) -> int:
     except config.ConfigError as e:
         print(f"Config error: {e}", file=sys.stderr)
         return 2
+    return cfg, fresh_setup
+
+
+def _watch(args, cfg: config.Config, expiring: discord.Expiring, restart_args: list[str]) -> int:
+    """The normal run: offer an update, keep the add-on current, then post events until stopped."""
+    dry_run = getattr(args, "dry_run", False)
+    if cfg.check_for_updates and not dry_run and _offer_update(args, restart_args, interactive=_interactive()):
+        return 0
+    if dry_run:
+        def send(url, body):
+            print(json.dumps(body, indent=2, ensure_ascii=False))
+    else:
+        send = discord.Sender(expiring=expiring).send  # also removes test messages when their minute is up
+
+    addon_install.sync_and_report(cfg.wow_dir or cfg.screenshots_dir.parent)
+    print("ForeverNotify is running. Leave this window open while you play; close it or press Ctrl+C to stop.")
+    try:
+        app.run(cfg, send)
+    except KeyboardInterrupt:
+        logging.info("Stopped.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+
+    if args.command == "decode":
+        for path in args.files:
+            print(path, json.dumps(decode_file(path), ensure_ascii=False))
+        return 0
+
+    if FROZEN:
+        updater.cleanup_leftovers(Path(sys.executable))  # the previous exe, after an update
+    restart_args = ["-c", str(args.config)] + (["-v"] if args.verbose else []) + ["run"]
+    if args.command == "update":
+        _offer_update(args, restart_args, force=True)
+        return 0
+
+    prepared = _prepare_config(args)
+    if isinstance(prepared, int):
+        return prepared
+    cfg, fresh_setup = prepared
 
     if args.command == "set-webhook":
         return set_webhook(args.config, args.channel, args.url)
-
-    wow_dir = cfg.wow_dir or cfg.screenshots_dir.parent
     if args.command == "install-addon":
-        return 0 if addon_install.install_and_report(wow_dir) else 1
+        return 0 if addon_install.install_and_report(cfg.wow_dir or cfg.screenshots_dir.parent) else 1
 
     expiring = pending_deletes(cfg)
     if args.command == "test-webhook" or fresh_setup:
@@ -204,27 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         if not ok:
             return 1
 
-    if cfg.check_for_updates and not getattr(args, "dry_run", False):
-        interactive = bool(sys.stdin and sys.stdin.isatty())
-        if updater.offer_update(args.config.parent, FROZEN, argv=restart_args, interactive=interactive):
-            if FROZEN:
-                updater.exit_now()  # the new version has started in this window
-            return 0
-
-    if getattr(args, "dry_run", False):
-        def send(url, body):
-            print(json.dumps(body, indent=2, ensure_ascii=False))
-    else:
-        sender = discord.Sender(expiring=expiring)  # also removes test messages when their minute is up
-        send = sender.send
-
-    addon_install.sync_and_report(wow_dir)
-    print("ForeverNotify is running. Leave this window open while you play; close it or press Ctrl+C to stop.")
-    try:
-        app.run(cfg, send)
-    except KeyboardInterrupt:
-        logging.info("Stopped.")
-    return 0
+    return _watch(args, cfg, expiring, restart_args)
 
 
 def frozen_main() -> int:

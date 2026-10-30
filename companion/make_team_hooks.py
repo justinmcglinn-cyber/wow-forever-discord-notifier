@@ -13,7 +13,6 @@ import tomllib
 from pathlib import Path
 
 from forever_notify import config, teamhooks
-from forever_notify.setup_wizard import WEBHOOK_PREFIXES
 
 HERE = Path(__file__).resolve().parent
 
@@ -28,7 +27,7 @@ def main(argv: list[str]) -> int:
     main_url, hooks = config.parse_webhooks(raw)
     named = [("default", main_url)] if main_url else []
     named += [(config.NAMES[event], url) for event, url in hooks.items()]
-    bad = [name for name, url in named if not url.startswith(WEBHOOK_PREFIXES)]
+    bad = [name for name, url in named if not config.is_webhook_url(url)]
     if not named:
         print(f"No webhooks in {source}")
         return 1

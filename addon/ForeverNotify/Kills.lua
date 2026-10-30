@@ -78,15 +78,6 @@ local function InGroup()
   return (ns.call(GetNumGroupMembers) or 0) > 0
 end
 
-local function InCombat()
-  return ns.call(UnitAffectingCombat, "player") and true or false
-end
-
-local function Location(p)
-  p:SetLocation(ns.Location())
-  return p
-end
-
 ------------------------------------------------------------------------------
 -- Battle report
 ------------------------------------------------------------------------------
@@ -119,14 +110,16 @@ local function SendReport()
     names[#names + 1] = name
     shown = shown + 1
   end
-  Location(ns.NewPayload("BATTLE")
+  ns.NewPayload("BATTLE")
     :Set("k", f.total)
     :Set("mine", f.mine)
     :Set("hon", f.honor > 0 and f.honor or nil)
     :Set("dur", math.floor(GetTime() - f.start + 0.5))
     :Set("streak", State().streak)
     :Set("v", #names > 0 and table.concat(names, ", ") or nil)
-    :Set("more", #f.victims > shown and (#f.victims - shown) or nil)):Send()
+    :Set("more", #f.victims > shown and (#f.victims - shown) or nil)
+    :SetLocation()
+    :Send()
 end
 
 -- Send the battle report once there's been no kill, honour or combat for
@@ -140,7 +133,7 @@ local function ScheduleReport()
   C_Timer.After(wait, function()
     reportPending = false
     if not fight then return end
-    if InCombat() then
+    if ns.InCombat() then
       lastActivity = GetTime()
       ScheduleReport()
     elseif GetTime() - lastActivity < REPORT_QUIET - 0.05 then
@@ -182,15 +175,15 @@ local function ReportMine(victim, rank, honor)
   Activity()
 
   if not ns.db.settings.kill then return end
-  local p = Location(ns.NewPayload("KILL")
+  ns.NewPayload("KILL")
     :Set("v", (victim and ns.PvP.RecentlySeen(victim)) or victim)
     :Set("vr", rank)
     :Set("hon", honor)
     :Set("streak", state.streak)
-    :Set("multi", multi))
-  local health, maxHealth = ns.call(UnitHealth, "player"), ns.call(UnitHealthMax, "player")
-  if health and maxHealth and maxHealth > 0 then p:Set("hp", math.floor(health / maxHealth * 100 + 0.5)) end
-  p:Send()
+    :Set("multi", multi)
+    :SetLocation()
+    :Set("hp", ns.HealthPercent())
+    :Send()
 end
 
 -- A kill your group got without you: only counted for the battle report.
@@ -242,7 +235,7 @@ ns.On("CHAT_MSG_COMBAT_HONOR_GAIN", function(msg)
   -- A client that names the victim (not Forever).
   namedAt = GetTime()
   ns.PvP.Scan() -- refresh victim details if they're still targeted or have a nameplate
-  local name = victim:match("^[^-]+") or victim
+  local name = ns.ShortName(victim)
   local deadAt = GetTime()
   for _, d in ipairs(ns.PvP.RecentlyDead(DEAD_WINDOW)) do
     if d.name == name then claimed[name], deadAt = d.deadAt, d.deadAt end -- their corpse is this kill

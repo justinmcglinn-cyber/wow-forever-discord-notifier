@@ -51,6 +51,16 @@ def install(wow_dir: Path, source: Path | None = None) -> Path:
     return target
 
 
+def parse_version(text: str | None) -> tuple[int, ...] | None:
+    """'v0.1.13' or '0.1.13' -> (0, 1, 13); None if it isn't a version."""
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)", (text or "").strip())
+    return tuple(int(part) for part in match.group(1).split(".")) if match else None
+
+
+def version_text(version: tuple[int, ...] | None, unknown: str = "unknown") -> str:
+    return ".".join(map(str, version)) if version else unknown
+
+
 def toc_version(addon_dir: Path) -> tuple[int, ...] | None:
     """The '## Version:' from the add-on's .toc, e.g. (0, 1, 0)."""
     try:
@@ -58,7 +68,7 @@ def toc_version(addon_dir: Path) -> tuple[int, ...] | None:
     except OSError:
         return None
     match = re.search(r"(?m)^##\s*Version:\s*([\d.]+)", text)
-    return tuple(int(n) for n in match.group(1).strip(".").split(".")) if match else None
+    return parse_version(match.group(1).strip(".")) if match else None
 
 
 def sync(wow_dir: Path, source: Path | None = None) -> str:
@@ -79,8 +89,7 @@ def sync(wow_dir: Path, source: Path | None = None) -> str:
 
 
 def _version_text(path: Path) -> str:
-    version = toc_version(path)
-    return ".".join(map(str, version)) if version else "unknown version"
+    return version_text(toc_version(path), "unknown version")
 
 
 def sync_and_report(wow_dir: Path) -> None:

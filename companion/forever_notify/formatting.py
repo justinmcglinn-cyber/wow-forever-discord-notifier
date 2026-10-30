@@ -17,7 +17,6 @@ COLOURS = {
     "KILL": 0x9B59B6,
     "BATTLE": 0x71368A,
     "FLAG": 0xE67E22,
-    "TEST": 0x3498DB,
     "SUMMARY_UP": 0x2ECC71,
     "SUMMARY_DOWN": 0x95A5A6,
 }
@@ -152,86 +151,96 @@ def _embed(kind: str, title: str, p: dict[str, Any], description: str = "", fiel
     return embed
 
 
-def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
-    """Return a Discord webhook body for a decoded signal, or None to ignore it."""
-    kind = p.get("t", "")
-    name = p.get("c", "Unknown")
-    content = ""
+def _location_field(p: dict[str, str]) -> tuple:
+    return ("Location", location(p), False)
 
-    if kind == "DEATH":
-        if p.get("k"):
-            how = "Killed by " + (unit(p["k"]) if p.get("kpvp") == "1" else f"**{p['k']}**")
-            if p.get("kpvp") == "1":
-                how += " — **PvP**"
-        else:
-            how = "Cause unknown"
-        embed = _embed(kind, f"💀 {name} died", p, how, [("Location", location(p), False)])
-    elif kind == "LEVEL":
-        fields = [("Location", location(p), False)]
-        prev, sess, new = to_int(p.get("prev"), None), to_int(p.get("sess"), None), to_int(p.get("new"), None)
-        if prev is not None:
-            label = f"Played at level {new - 1}" if new else "Played on previous level"
-            fields.append((label, duration(prev), True))
-        if sess is not None:
-            fields.append(("This session", duration(sess), True))
-        embed = _embed(kind, f"⬆️ {name} reached level {p.get('new', '?')}", p, fields=fields)
-    elif kind == "PVP":
-        attackers = [unit(p[k]) for k in ("a1", "a2", "a3") if p.get(k)]
-        if p.get("more"):
-            attackers.append(f"…and {p['more']} more")
-        fields = [
-            ("Attackers", "\n".join(attackers) or "Unknown", False),
-            ("Location", location(p), False),
-        ]
-        if p.get("hp"):
-            fields.append(("Your health", f"{p['hp']}%", True))
-        if p.get("near"):
-            fields.append(("Hostile players nearby", p["near"], True))
-        embed = _embed(kind, f"⚔️ {name} is under attack!", p, fields=fields)
-        content = pvp_mention
-    elif kind == "KILL":
-        victim = p.get("v", "")
-        victim_name = victim.split("|")[0] if victim else ""
-        title = f"🗡️ {name} killed {victim_name}" if victim_name else f"🗡️ {name} scored an honorable kill"
-        multi, streak = to_int(p.get("multi"), 1) or 1, to_int(p.get("streak"), 1) or 1
-        fields = []
-        if "|" in victim:
-            fields.append(("Victim", unit(victim), False))
-        if p.get("vr"):
-            fields.append(("PvP rank", p["vr"], True))
-        if p.get("hon"):
-            fields.append(("Honor", f"+{p['hon']}", True))
-        fields.append(("Streak", str(streak), True))
-        fields.append(("Location", location(p), False))
-        if p.get("hp"):
-            fields.append(("Your health", f"{p['hp']}%", True))
-        embed = _embed(kind, title, p, "\n".join(kill_callouts(multi, streak)), fields)
-    elif kind == "BATTLE":
-        total, mine = to_int(p.get("k")), to_int(p.get("mine"))
-        title = f"⚔️ Battle report: {name}'s group took down {total} {'enemy' if total == 1 else 'enemies'}"
-        fields = [("Your kills", str(mine), True), ("Group kills", str(total), True)]
-        if p.get("hon"):
-            fields.append(("Honor", f"+{p['hon']}", True))
-        if p.get("dur"):
-            fields.append(("Fight length", duration(to_int(p["dur"])), True))
-        if p.get("streak"):
-            fields.append(("Your streak", p["streak"], True))
-        if p.get("v"):
-            fields.append(("Enemies down", p["v"] + (f" and {p['more']} more" if p.get("more") else ""), False))
-        fields.append(("Location", location(p), False))
-        embed = _embed(kind, title, p, fields=fields)
-    elif kind == "FLAG":
-        state = "now flagged for PvP" if p.get("on") == "1" else "no longer flagged for PvP"
-        embed = _embed(kind, f"🚩 {name} is {state}", p, fields=[("Location", location(p), False)])
-    elif kind == "TEST":
-        embed = _embed(kind, "✅ ForeverNotify test", p, "The add-on and companion are talking to each other.",
-                       [("Location", location(p), False)])
+
+def _health_fields(p: dict[str, str]) -> list[tuple]:
+    return [("Your health", f"{p['hp']}%", True)] if p.get("hp") else []
+
+
+# One function per notification type: (payload, character name) -> (title, description, fields).
+
+def _death(p: dict[str, str], name: str) -> tuple:
+    if p.get("k"):
+        pvp = p.get("kpvp") == "1"
+        how = "Killed by " + (unit(p["k"]) if pvp else f"**{p['k']}**") + (" — **PvP**" if pvp else "")
     else:
-        return None  # RELOAD and unknown kinds are internal
+        how = "Cause unknown"
+    return f"💀 {name} died", how, [_location_field(p)]
 
-    body: dict[str, Any] = {"embeds": [embed]}
-    if content:
-        body["content"] = content
+
+def _level(p: dict[str, str], name: str) -> tuple:
+    fields = [_location_field(p)]
+    prev, sess, new = to_int(p.get("prev"), None), to_int(p.get("sess"), None), to_int(p.get("new"), None)
+    if prev is not None:
+        label = f"Played at level {new - 1}" if new else "Played on previous level"
+        fields.append((label, duration(prev), True))
+    if sess is not None:
+        fields.append(("This session", duration(sess), True))
+    return f"⬆️ {name} reached level {p.get('new', '?')}", "", fields
+
+
+def _pvp(p: dict[str, str], name: str) -> tuple:
+    attackers = [unit(p[k]) for k in ("a1", "a2", "a3") if p.get(k)]
+    if p.get("more"):
+        attackers.append(f"…and {p['more']} more")
+    fields = [("Attackers", "\n".join(attackers) or "Unknown", False), _location_field(p), *_health_fields(p)]
+    if p.get("near"):
+        fields.append(("Hostile players nearby", p["near"], True))
+    return f"⚔️ {name} is under attack!", "", fields
+
+
+def _kill(p: dict[str, str], name: str) -> tuple:
+    victim = p.get("v", "")
+    victim_name = victim.split("|")[0] if victim else ""
+    title = f"🗡️ {name} killed {victim_name}" if victim_name else f"🗡️ {name} scored an honorable kill"
+    multi, streak = to_int(p.get("multi"), 1) or 1, to_int(p.get("streak"), 1) or 1
+    fields = []
+    if "|" in victim:
+        fields.append(("Victim", unit(victim), False))
+    if p.get("vr"):
+        fields.append(("PvP rank", p["vr"], True))
+    if p.get("hon"):
+        fields.append(("Honor", f"+{p['hon']}", True))
+    fields += [("Streak", str(streak), True), _location_field(p), *_health_fields(p)]
+    return title, "\n".join(kill_callouts(multi, streak)), fields
+
+
+def _battle(p: dict[str, str], name: str) -> tuple:
+    total, mine = to_int(p.get("k")), to_int(p.get("mine"))
+    title = f"⚔️ Battle report: {name}'s group took down {total} {'enemy' if total == 1 else 'enemies'}"
+    fields = [("Your kills", str(mine), True), ("Group kills", str(total), True)]
+    if p.get("hon"):
+        fields.append(("Honor", f"+{p['hon']}", True))
+    if p.get("dur"):
+        fields.append(("Fight length", duration(to_int(p["dur"])), True))
+    if p.get("streak"):
+        fields.append(("Your streak", p["streak"], True))
+    if p.get("v"):
+        fields.append(("Enemies down", p["v"] + (f" and {p['more']} more" if p.get("more") else ""), False))
+    return title, "", fields + [_location_field(p)]
+
+
+def _flag(p: dict[str, str], name: str) -> tuple:
+    state = "now flagged for PvP" if p.get("on") == "1" else "no longer flagged for PvP"
+    return f"🚩 {name} is {state}", "", [_location_field(p)]
+
+
+_FORMATTERS = {"DEATH": _death, "LEVEL": _level, "PVP": _pvp, "KILL": _kill, "BATTLE": _battle, "FLAG": _flag}
+
+
+def format_signal(p: dict[str, str], pvp_mention: str = "") -> dict | None:
+    """Return a Discord webhook body for a decoded signal, or None if it isn't posted as is
+    (RELOAD is internal; TEST becomes sample_messages)."""
+    kind = p.get("t", "")
+    formatter = _FORMATTERS.get(kind)
+    if formatter is None:
+        return None
+    title, description, fields = formatter(p, p.get("c", "Unknown"))
+    body: dict[str, Any] = {"embeds": [_embed(kind, title, p, description, fields)]}
+    if kind == "PVP" and pvp_mention:
+        body["content"] = pvp_mention
         body["allowed_mentions"] = {"parse": ["users", "roles", "everyone"]}
     return body
 

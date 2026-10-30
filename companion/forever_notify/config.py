@@ -18,6 +18,15 @@ NAMES = {"death": "deaths", "level": "level_ups", "pvp": "pvp_alerts", "flag": "
 ALIASES = {**{event: event for event in EVENTS}, **{name: event for event, name in NAMES.items()}}
 
 
+WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/",
+                    "https://ptb.discord.com/api/webhooks/", "https://canary.discord.com/api/webhooks/")
+
+
+def is_webhook_url(url: str) -> bool:
+    """Whether url looks like a Discord webhook (setup, set-webhook and make_team_hooks.py check this)."""
+    return url.startswith(WEBHOOK_PREFIXES)
+
+
 class ConfigError(ValueError):
     pass
 
@@ -41,6 +50,10 @@ class Config:
     state_file: Path | None = None  # remembers posted summaries; None = in memory only
     catch_up_seconds: float = 600  # signals saved this long before start-up are still posted
     check_for_updates: bool = True  # ask GitHub for a newer release at start-up
+
+    def state_path(self, name: str) -> Path | None:
+        """A state file next to config.toml, or None when state is kept in memory only (tests)."""
+        return self.state_file.with_name(name) if self.state_file else None
 
     def webhook_for(self, event: str) -> str:
         return self.webhooks.get(event) or (event == "flag" and self.webhooks.get("pvp")) or self.webhook_url

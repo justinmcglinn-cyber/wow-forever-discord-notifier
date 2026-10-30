@@ -12,7 +12,7 @@ ns.Played = Played
 local SYNC_INTERVAL = 60  -- seconds between saves of the running count (a crash loses at most this)
 local HIDE_FOR = 10       -- seconds to keep the chat windows' /played lines hidden after our request
 
-local key                 -- character the count belongs to (fixed at login, like the gold session)
+local key                 -- character the count belongs to: ns.SessionKey() from login
 local mark                -- GetTime() up to which the count has been added
 local hiddenFrames = {}   -- chat frames we stopped listening for TIME_PLAYED_MSG
 
@@ -53,7 +53,7 @@ end
 
 -- Called on initial login and on /reload.
 function Played.Begin()
-  key = ns.CharKey()
+  key = ns.SessionKey()
   mark = GetTime()
   local rec, level = Record(), ns.call(UnitLevel, "player")
   -- Levels gained without the add-on: start over, incomplete until the server answers.

@@ -12,6 +12,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from . import jsonstate
+
 log = logging.getLogger(__name__)
 
 USER_AGENT = "ForeverNotify (https://github.com/justinmcglinn-cyber/wow-forever-discord-notifier, 0.1)"
@@ -97,13 +99,9 @@ class Expiring:
         self._delete = delete_fn
         self._clock = clock
         self._lock = threading.Lock()
-        self._items: list[dict] = []
-        if path:
-            try:
-                self._items = [i for i in json.loads(path.read_text(encoding="utf-8")).get("pending", [])
-                               if isinstance(i, dict) and {"url", "id", "due"} <= i.keys()]
-            except (OSError, ValueError, TypeError, AttributeError):
-                pass
+        pending = jsonstate.load(path, {}).get("pending", [])
+        self._items: list[dict] = [i for i in pending if isinstance(i, dict) and {"url", "id", "due"} <= i.keys()] \
+            if isinstance(pending, list) else []
 
     def __len__(self) -> int:
         with self._lock:
@@ -149,14 +147,7 @@ class Expiring:
             self.run_due()
 
     def _save(self) -> None:
-        if not self._path:
-            return
-        try:
-            tmp = self._path.with_name(self._path.name + ".tmp")
-            tmp.write_text(json.dumps({"pending": self._items}), encoding="utf-8")
-            tmp.replace(self._path)
-        except OSError as e:
-            log.warning("Could not save %s: %s", self._path, e)
+        jsonstate.save(self._path, {"pending": self._items})
 
 
 class Sender:

@@ -114,6 +114,40 @@ function ns.CharKey()
   return ns.PlayerName() .. "-" .. ns.Realm()
 end
 
+-- The character key fixed at login/reload, used by everything saved per
+-- session (gold, time played), however the client reports names later.
+local sessionKey
+
+function ns.BeginSession()
+  sessionKey = ns.CharKey()
+  return sessionKey
+end
+
+function ns.SessionKey()
+  return sessionKey or ns.CharKey()
+end
+
+-- "Name-Realm" -> "Name".
+function ns.ShortName(name)
+  return name and (name:match("^[^-]+") or name)
+end
+
+function ns.InCombat()
+  return ns.call(UnitAffectingCombat, "player") and true or false
+end
+
+-- The player's health as a whole percentage, or nil when the client hides it.
+function ns.HealthPercent()
+  local health, maxHealth = ns.call(UnitHealth, "player"), ns.call(UnitHealthMax, "player")
+  if health and maxHealth and maxHealth > 0 then return math.floor(health / maxHealth * 100 + 0.5) end
+end
+
+-- true if `unit` is of your faction, false if not, nil if the client hides either faction.
+function ns.SameFaction(unit)
+  local theirs, mine = ns.call(UnitFactionGroup, unit), ns.call(UnitFactionGroup, "player")
+  if theirs and mine then return theirs == mine end
+end
+
 function ns.Location()
   local loc = {
     zone = ns.call(GetRealZoneText),
@@ -186,7 +220,9 @@ function Payload:Set(key, value)
   return self
 end
 
+-- loc defaults to where the player is now.
 function Payload:SetLocation(loc)
+  loc = loc or ns.Location()
   return self:Set("zone", loc.zone):Set("sz", loc.subzone):Set("x", loc.x):Set("y", loc.y)
     :Set("pvp", loc.pvp):Set("inst", loc.instance)
 end

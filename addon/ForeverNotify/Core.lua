@@ -26,6 +26,7 @@ ns.On("PLAYER_ENTERING_WORLD", function(isInitialLogin, isReloadingUi)
   local isReload = isReloadingUi and true or false
   enteredWorld = true
 
+  ns.BeginSession()
   ns.Gold.Begin(isReload)
   ns.Played.Begin()
   ns.PvP.CheckFlag()
@@ -41,7 +42,7 @@ end)
 ns.On("PLAYER_DEAD", function()
   ns.Gold.AddDeath()
   if not ns.db.settings.death then return end
-  local p = ns.NewPayload("DEATH"):SetLocation(ns.Location())
+  local p = ns.NewPayload("DEATH"):SetLocation()
   ns.PvP.Scan() -- catch an attacker still targeting you, even if no combat-log data arrived
   local killer, isPlayer = ns.PvP.RecentKiller()
   if killer then
@@ -61,7 +62,7 @@ ns.On("PLAYER_LEVEL_UP", function(level)
     :Set("new", level)
     :Set("prev", played and math.floor(played))
     :Set("sess", session and (time() - session.start))
-    :SetLocation(ns.Location())
+    :SetLocation()
     :Send()
 end)
 
@@ -90,14 +91,20 @@ ns.On("ADDON_ACTION_BLOCKED", OnBlocked)
 -- Slash commands
 ------------------------------------------------------------------------------
 
-local TOGGLES = { death = "Death", level = "Level-up", pvp = "PvP attack", kill = "PvP kill", flag = "PvP flag", summary = "Logout gold summary" }
+-- Notifications that /fnotify <name> turns on and off, in the order /fnotify lists them.
+local TOGGLE_ORDER = {
+  { "death", "Death" }, { "level", "Level-up" }, { "pvp", "PvP attack" }, { "kill", "PvP kill" },
+  { "flag", "PvP flag" }, { "summary", "Logout gold summary" },
+}
+local TOGGLES, TOGGLE_NAMES = {}, {}
+for i, t in ipairs(TOGGLE_ORDER) do TOGGLES[t[1]], TOGGLE_NAMES[i] = t[2], t[1] end
 
 local function OnOff(v) return v and "|cff55ff55on|r" or "|cffff5555off|r" end
 
 local function Status()
   local s = ns.db.settings
   ns.Print("Notifications:")
-  for _, key in ipairs({ "death", "level", "pvp", "kill", "flag", "summary" }) do
+  for _, key in ipairs(TOGGLE_NAMES) do
     print(string.format("  %s (%s): %s", TOGGLES[key], key, OnOff(s[key])))
   end
   print("  Screenshot format: " .. tostring(ns.call(GetCVar, "screenshotFormat")))
@@ -109,8 +116,8 @@ local function Status()
     print(string.format("  Blocked by the game: %s (%s, %s)", b.func, b.inCombat and "in combat" or "out of combat",
       date("%H:%M:%S", b.at)))
   end
-  print("Commands: /fnotify test | /fnotify preview | /fnotify <" .. "death|level|pvp|kill|flag|summary> | /fnotify combatlog"
-    .. " | /fnotify debug")
+  print("Commands: /fnotify test | /fnotify preview | /fnotify <" .. table.concat(TOGGLE_NAMES, "|")
+    .. "> | /fnotify combatlog | /fnotify debug")
 end
 
 SLASH_FOREVERNOTIFY1 = "/fnotify"
@@ -119,7 +126,7 @@ SlashCmdList.FOREVERNOTIFY = function(msg)
   if cmd == "" or cmd == "status" then
     Status()
   elseif cmd == "test" then
-    ns.NewPayload("TEST"):SetLocation(ns.Location()):Send()
+    ns.NewPayload("TEST"):SetLocation():Send()
     ns.Print("Test notification sent. Check Discord in a few seconds.")
   elseif cmd == "preview" then
     if ns.Signal.Preview(ns.NewPayload("TEST"):Serialize(ns.Signal.MAX_PAYLOAD), 5) then

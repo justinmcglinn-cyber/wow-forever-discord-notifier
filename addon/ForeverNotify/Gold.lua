@@ -46,12 +46,10 @@ function Gold.Category()
   return "other"
 end
 
--- Key of the session begun at login/reload, so logout finds the same session
--- however the client reports the name and realm by then.
-local sessionKey
-
+-- Sessions are keyed by ns.SessionKey() (fixed at login/reload), so logout
+-- finds the same session however the client reports the name and realm by then.
 local function Session()
-  return ns.db and ns.db.sessions[sessionKey or ns.CharKey()]
+  return ns.db and ns.db.sessions[ns.SessionKey()]
 end
 
 local function Record(session, delta, category)
@@ -63,7 +61,7 @@ end
 -- atLogout: the client reports 0 gold (and may report level 0) while quitting,
 -- so use the money tracked through the session instead of GetMoney().
 local function UpdateCharacter(atLogout)
-  local key = sessionKey or ns.CharKey()
+  local key = ns.SessionKey()
   local char = ns.db.chars[key] or {}
   ns.db.chars[key] = char
   char.name = ns.PlayerName()
@@ -81,12 +79,10 @@ local function UpdateCharacter(atLogout)
   char.seen = time()
   return char
 end
-Gold.UpdateCharacter = UpdateCharacter
 
 -- Called on initial login (new session) and on /reload (session continues).
 function Gold.Begin(isReload)
-  local key = ns.CharKey()
-  sessionKey = key
+  local key = ns.SessionKey()
   local money = ns.call(GetMoney) or 0
   local session = ns.db.sessions[key]
   if isReload and session then

@@ -11,8 +11,6 @@ from typing import Callable
 
 from . import addon_install, config, teamhooks
 
-WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/",
-                    "https://ptb.discord.com/api/webhooks/", "https://canary.discord.com/api/webhooks/")
 # (event, label) for each channel the wizard asks about (config.NAMES has their config.toml names);
 # PvP flag notices follow pvp.
 CHANNELS = (("death", "Deaths"), ("level", "Level ups"), ("pvp", "PvP alerts"), ("kill", "PvP kills"), ("summary", "Gold summary (on logout)"))
@@ -130,7 +128,7 @@ def _ask_url(ask: Callable[[str], str], prompt: str, default: str = "") -> str:
         url = ask(prompt).strip().strip('"')
         if not url and default:
             return default
-        if url.startswith(WEBHOOK_PREFIXES):
+        if config.is_webhook_url(url):
             return url
         print("  That doesn't look like a Discord webhook URL (it should start with https://discord.com/api/webhooks/).")
 

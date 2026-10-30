@@ -16,20 +16,16 @@ local KILLER_WINDOW = 20    -- seconds before death within which an attacker cou
 local NPC_KILLER_WINDOW = 10
 local MAX_LISTED = 3
 
-local attackers = {}        -- name -> { summary, lastSeen, source }
+local attackers = {}        -- name -> { name, summary, lastSeen }
 local reported = {}         -- name -> GetTime() of last alert
 local lastAlert = -math.huge
-local lastNpcAttacker       -- { name, at } from the combat log
+local lastNpcAttacker       -- { name, at }: the last hostile NPC targeting or hitting you
 local ticker
 local wasFlagged
 
 local COMBATLOG_PLAYER = 0x400
 local COMBATLOG_NPC = 0x800
 local COMBATLOG_HOSTILE = 0x40
-
-local function InCombat()
-  return ns.call(UnitAffectingCombat, "player") and true or false
-end
 
 -- A player who can attack you right now. Asking the game whether *they* can
 -- attack *you* covers sanctuaries, PvP flags and realm rules for us, so an
@@ -39,8 +35,7 @@ end
 local function IsHostilePlayer(unit)
   if not ns.call(UnitExists, unit) or not ns.call(UnitIsPlayer, unit) then return false end
   if not ns.call(UnitCanAttack, unit, "player") then return false end
-  local theirs, mine = ns.call(UnitFactionGroup, unit), ns.call(UnitFactionGroup, "player")
-  return not (theirs and mine and theirs == mine)
+  return ns.SameFaction(unit) ~= true
 end
 
 local function IsHostileNPC(unit)
@@ -53,8 +48,8 @@ end
 local function IsDeadEnemyPlayer(unit)
   if not ns.call(UnitExists, unit) or not ns.call(UnitIsPlayer, unit) then return false end
   if not ns.call(UnitIsDeadOrGhost, unit) then return false end
-  local theirs, mine = ns.call(UnitFactionGroup, unit), ns.call(UnitFactionGroup, "player")
-  if theirs and mine then return theirs ~= mine end
+  local same = ns.SameFaction(unit)
+  if same ~= nil then return not same end
   return ns.call(UnitIsEnemy, "player", unit) and true or false
 end
 
@@ -114,16 +109,17 @@ function PvP.TrackedCount()
   return n
 end
 
+local SCAN_UNITS = { "target", "focus", "mouseover", "softenemy" }
+for i = 1, 40 do SCAN_UNITS[#SCAN_UNITS + 1] = "nameplate" .. i end
+
 -- Records hostile players (and, for naming killers without the combat log,
 -- hostile NPCs) that are targeting you, and remembers every hostile player seen.
 -- Returns the number of hostile players with visible nameplates.
 local function ScanUnits()
-  local units = { "target", "focus", "mouseover", "softenemy" }
-  for i = 1, 40 do units[#units + 1] = "nameplate" .. i end
   local hostiles = 0
   local now = GetTime()
   Prune(now)
-  for _, unit in ipairs(units) do
+  for _, unit in ipairs(SCAN_UNITS) do
     if IsDeadEnemyPlayer(unit) then -- checked first: a corpse is never an attacker
       local name = ns.call(UnitName, unit)
       if name then
@@ -134,10 +130,13 @@ local function ScanUnits()
     elseif IsHostilePlayer(unit) then
       local name = ns.call(UnitName, unit)
       if unit:find("^nameplate") then hostiles = hostiles + 1 end
-      if name then seen[name] = { summary = ns.UnitSummary(unit), at = now } end
-      if name and unit == "target" then targetedAlive[name] = now end
-      if name and ns.call(UnitIsUnit, unit .. "target", "player") then
-        attackers[name] = { name = name, summary = ns.UnitSummary(unit), lastSeen = now, source = "unit" }
+      if name then
+        local summary = ns.UnitSummary(unit)
+        seen[name] = { summary = summary, at = now }
+        if unit == "target" then targetedAlive[name] = now end
+        if ns.call(UnitIsUnit, unit .. "target", "player") then
+          attackers[name] = { name = name, summary = summary, lastSeen = now }
+        end
       end
     elseif IsHostileNPC(unit) and ns.call(UnitIsUnit, unit .. "target", "player") then
       local name = ns.call(UnitName, unit)
@@ -175,10 +174,7 @@ function PvP.Check()
   if not fresh or now - lastAlert < ns.db.settings.pvpCooldown then return end
   lastAlert = now
 
-  local p = ns.NewPayload("PVP"):SetLocation(ns.Location())
-  local health, maxHealth = ns.call(UnitHealth, "player"), ns.call(UnitHealthMax, "player")
-  if health and maxHealth and maxHealth > 0 then p:Set("hp", math.floor(health / maxHealth * 100 + 0.5)) end
-  p:Set("near", hostiles)
+  local p = ns.NewPayload("PVP"):SetLocation():Set("hp", ns.HealthPercent()):Set("near", hostiles)
   for i = 1, math.min(#active, MAX_LISTED) do
     local a = active[i]
     p:Set("a" .. i, a.info.summary or a.name)
@@ -225,7 +221,7 @@ ns.On("PLAYER_REGEN_DISABLED", function()
   QuickCheck()
   if ticker then ticker:Cancel() end
   ticker = C_Timer.NewTicker(SCAN_INTERVAL, function()
-    if not InCombat() then
+    if not ns.InCombat() then
       ticker:Cancel()
       ticker = nil
       return
@@ -235,7 +231,7 @@ ns.On("PLAYER_REGEN_DISABLED", function()
 end)
 
 ns.On("UNIT_TARGET", function(unit)
-  if InCombat() and unit and unit ~= "player" then QuickCheck() end
+  if ns.InCombat() and unit and unit ~= "player" then QuickCheck() end
 end)
 
 -- Remember enemy players you target (alive), even out of combat, to tell your
@@ -248,7 +244,7 @@ ns.On("PLAYER_TARGET_CHANGED", function()
 end)
 
 ns.On("NAME_PLATE_UNIT_ADDED", function()
-  if InCombat() then QuickCheck() end
+  if ns.InCombat() then QuickCheck() end
 end)
 
 ns.On("UNIT_COMBAT", function(unit, action)
@@ -270,7 +266,7 @@ local function OnCombatLog()
   if band(sourceFlags, COMBATLOG_HOSTILE) == 0 then return end
 
   if band(sourceFlags, COMBATLOG_PLAYER) ~= 0 then
-    local name = sourceName:match("^[^-]+") or sourceName
+    local name = ns.ShortName(sourceName)
     local existing = attackers[name]
     if existing then
       existing.lastSeen = GetTime()
@@ -280,7 +276,6 @@ local function OnCombatLog()
         name = name,
         summary = ns.JoinFields(name, realm, nil, class, race, nil),
         lastSeen = GetTime(),
-        source = "log",
       }
     end
     PvP.Check()
@@ -323,7 +318,7 @@ end
 local function CheckFlag()
   local flagged = ns.call(UnitIsPVP, "player") and true or false
   if wasFlagged ~= nil and flagged ~= wasFlagged and ns.db and ns.db.settings.flag then
-    ns.NewPayload("FLAG"):Set("on", flagged and 1 or 0):SetLocation(ns.Location()):Send()
+    ns.NewPayload("FLAG"):Set("on", flagged and 1 or 0):SetLocation():Send()
   end
   wasFlagged = flagged
 end

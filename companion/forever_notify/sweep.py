@@ -10,13 +10,13 @@ read once (and never modified).
 
 from __future__ import annotations
 
-import json
 import logging
 import queue
 import threading
 import time
 from pathlib import Path
 
+from . import jsonstate
 from .signal_decode import decode_file
 
 log = logging.getLogger(__name__)
@@ -33,13 +33,10 @@ class ScreenshotCache:
         self._lock = threading.Lock()
         self._save_lock = threading.Lock()  # the sweep thread and the main loop both save
         self._dirty = False
-        self._known: dict[str, list[int]] = {}
-        if path:
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                self._known = {str(k): list(v) for k, v in data.get("known", {}).items()}
-            except (OSError, ValueError, TypeError, AttributeError):
-                pass
+        try:
+            self._known = {str(k): list(v) for k, v in jsonstate.load(path, {}).get("known", {}).items()}
+        except (TypeError, ValueError, AttributeError):
+            self._known = {}
 
     @staticmethod
     def _stamp(path: Path) -> list[int] | None:
@@ -77,14 +74,9 @@ class ScreenshotCache:
             with self._lock:
                 if not self._dirty:
                     return
-                data = json.dumps({"known": self._known})
+                data = {"known": dict(self._known)}
                 self._dirty = False
-            try:
-                tmp = self._path.with_name(self._path.name + ".tmp")
-                tmp.write_text(data, encoding="utf-8")
-                tmp.replace(self._path)
-            except OSError as e:
-                log.warning("Could not save %s: %s", self._path, e)
+            jsonstate.save(self._path, data)
 
 
 def _age(payload: dict[str, str], mtime: float, now: float) -> float:

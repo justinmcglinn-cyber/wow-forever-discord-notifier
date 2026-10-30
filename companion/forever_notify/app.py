@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import glob
-import json
 import logging
 import subprocess
 import sys
@@ -11,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import formatting
+from . import formatting, jsonstate
 from .config import SIGNAL_EVENTS, Config
 from .luasv import LuaParseError, parse_saved_variables
 from .signal_decode import decode_file
@@ -104,13 +103,10 @@ class PostedSummaries:
 
     def __init__(self, path: Path | None = None):
         self._path = path
-        self._items: list[tuple[str, int]] = []
-        if path:
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                self._items = [self._key(i) for i in data.get("posted_summaries", [])]
-            except (OSError, ValueError, TypeError, AttributeError):
-                pass
+        try:
+            self._items = [self._key(i) for i in jsonstate.load(path, {}).get("posted_summaries", [])]
+        except (TypeError, ValueError):
+            self._items = []
 
     @staticmethod
     def _key(ident) -> tuple[str, int]:
@@ -129,13 +125,7 @@ class PostedSummaries:
         if key in self._items:
             return
         self._items = (self._items + [key])[-self.KEEP:]
-        if self._path:
-            try:  # via a temporary file, so a crash mid-write can't leave it half-written
-                tmp = self._path.with_name(self._path.name + ".tmp")
-                tmp.write_text(json.dumps({"posted_summaries": self._items}), encoding="utf-8")
-                tmp.replace(self._path)
-            except OSError as e:
-                log.warning("Could not save %s: %s", self._path, e)
+        jsonstate.save(self._path, {"posted_summaries": self._items})
 
 
 class Notifier:
@@ -281,6 +271,13 @@ def _timing(path: Path) -> str:
     return f" (game saved it in {max(0.0, st.st_mtime - st.st_ctime):.2f}s, read {max(0.0, time.time() - st.st_mtime):.2f}s later)"
 
 
+def _delete(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError as e:
+        log.warning("Could not delete %s: %s", path, e)
+
+
 def process_screenshot(path: Path, notifier: Notifier, delete: bool, cache: ScreenshotCache | None = None) -> bool:
     """Decode one screenshot. Returns False if it couldn't be read yet."""
     try:
@@ -298,10 +295,7 @@ def process_screenshot(path: Path, notifier: Notifier, delete: bool, cache: Scre
     except Exception:  # one bad signal must not stop the companion
         log.exception("Couldn't handle the %s signal in %s; skipped it", payload.get("t"), path.name)
     if delete:
-        try:
-            path.unlink()
-        except OSError as e:
-            log.warning("Could not delete %s: %s", path, e)
+        _delete(path)
     return True
 
 
@@ -338,7 +332,7 @@ def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bo
         except OSError as e:
             log.warning("Could not read %s: %s", path, e)
 
-    cache = ScreenshotCache(config.state_file.with_name("screenshot_cache.json") if config.state_file else None)
+    cache = ScreenshotCache(config.state_path("screenshot_cache.json"))
     sweep = StartupSweep(screenshots.initial, cache, config.delete_signal_screenshots, config.catch_up_seconds)
     sweep.start()
     last_cache_save = time.time()
@@ -353,10 +347,7 @@ def run(config: Config, send: Callable[[str, dict], None], stop: Callable[[], bo
                 except Exception:
                     log.exception("Couldn't handle the %s signal in %s; skipped it", payload.get("t"), path.name)
                 if config.delete_signal_screenshots:
-                    try:
-                        path.unlink()
-                    except OSError as e:
-                        log.warning("Could not delete %s: %s", path, e)
+                    _delete(path)
             for path in screenshots.poll(now):
                 try:
                     handled = process_screenshot(path, notifier, config.delete_signal_screenshots, cache)
