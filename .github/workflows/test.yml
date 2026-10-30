@@ -3,27 +3,62 @@ name: test
 on:
   push:
   pull_request:
+  # Release without pushing a tag: Actions > test > Run workflow. The commit's add-on version becomes the tag.
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit to release (leave empty for the latest on the chosen branch)"
+        required: false
+        default: ""
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.release.outputs.tag }}      # e.g. v0.1.14, or empty when not releasing
+      latest: ${{ steps.release.outputs.latest }}    # false when releasing an older version than one already out
+      sha: ${{ steps.release.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0  # all tags, to check what's already released
       - name: No real Discord webhooks in the repo
         run: |
           if git grep -nIE 'discord(app)?\.com/api/webhooks/[0-9]{15,}'; then
             echo "A Discord webhook URL is committed. Remove it and recreate that webhook in Discord."
             exit 1
           fi
-      - name: Release tag matches the add-on version (version tags only)
+      - name: Release tag (version tags and manual releases)
         # The updater compares the tag with the version in the exe; a mismatch would offer the same update forever.
-        if: startsWith(github.ref, 'refs/tags/v')
+        id: release
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           version=$(sed -n 's/^## Version: *//p' addon/ForeverNotify/ForeverNotify.toc | tr -d '\r')
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME doesn't match '## Version: $version' in ForeverNotify.toc. Bump the .toc, commit, and tag that commit."
-            exit 1
+          tag=""
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            tag="v$version"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "$tag is already released. Bump '## Version' in ForeverNotify.toc and commit before releasing again."
+              exit 1
+            fi
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+            if [ "v$version" != "$tag" ]; then
+              echo "Tag $tag doesn't match '## Version: $version' in ForeverNotify.toc. Bump the .toc, commit, and tag that commit."
+              exit 1
+            fi
           fi
+          latest=true
+          highest=$(git tag -l 'v*' | sort -V | tail -1)
+          if [ -n "$tag" ] && [ -n "$highest" ] && [ "$(printf '%s\n%s\n' "$highest" "$tag" | sort -V | tail -1)" != "$tag" ]; then
+            latest=false
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then echo "Releasing $tag from $(git rev-parse --short HEAD) (latest: $latest)"; fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -47,8 +82,12 @@ jobs:
       contents: write
       id-token: write      # build provenance attestation
       attestations: write
+    env:
+      TAG: ${{ needs.test.outputs.release }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.test.outputs.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -64,35 +103,38 @@ jobs:
           path: |
             companion/dist/ForeverNotify.exe
             companion/dist/config.example.toml
-      - name: Zip the release (version tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Zip the release (releases only)
+        if: needs.test.outputs.release != ''
         run: |
-          Compress-Archive -Path companion\dist\ForeverNotify.exe, companion\dist\config.example.toml, addon\ForeverNotify -DestinationPath ForeverNotify-${{ github.ref_name }}.zip
-      - name: Attest build provenance (version tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+          Compress-Archive -Path companion\dist\ForeverNotify.exe, companion\dist\config.example.toml, addon\ForeverNotify -DestinationPath "ForeverNotify-$env:TAG.zip"
+      - name: Attest build provenance (releases only)
+        if: needs.test.outputs.release != ''
         # Needs a public repo (or GitHub Enterprise); never blocks the release.
         continue-on-error: true
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
             companion/dist/ForeverNotify.exe
-            ForeverNotify-${{ github.ref_name }}.zip
-      - name: Publish the release (version tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+            ForeverNotify-${{ needs.test.outputs.release }}.zip
+      - name: Publish the release (releases only)
+        if: needs.test.outputs.release != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.test.outputs.sha }}
+          LATEST: ${{ needs.test.outputs.latest }}
         run: |
           $exe = (Get-FileHash companion\dist\ForeverNotify.exe -Algorithm SHA256).Hash
-          $zip = (Get-FileHash ForeverNotify-${{ github.ref_name }}.zip -Algorithm SHA256).Hash
+          $zip = (Get-FileHash "ForeverNotify-$env:TAG.zip" -Algorithm SHA256).Hash
           $notes = @(
-            "Built by GitHub Actions from commit ${{ github.sha }} ([build log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})).",
+            "Built by GitHub Actions from commit $env:SHA ([build log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})).",
             "",
             "SHA-256 of ``ForeverNotify.exe`` (attached, and inside the zip): ``$exe``",
-            "SHA-256 of ``ForeverNotify-${{ github.ref_name }}.zip``: ``$zip``",
+            "SHA-256 of ``ForeverNotify-$env:TAG.zip``: ``$zip``",
             "",
             "Check your copy in PowerShell: ``Get-FileHash .\ForeverNotify.exe``. With the GitHub CLI, ``gh attestation verify ForeverNotify.exe -R ${{ github.repository }}`` also confirms it was built here.",
             ""
           ) -join "`n"
           Set-Content -Path release-notes.md -Value $notes -Encoding utf8
-          # The exe on its own is what the companion's updater downloads.
-          gh release create ${{ github.ref_name }} ForeverNotify-${{ github.ref_name }}.zip companion\dist\ForeverNotify.exe --title ${{ github.ref_name }} --notes-file release-notes.md --generate-notes
+          # The exe on its own is what the companion's updater downloads. --target creates the tag when it
+          # doesn't exist yet (manual releases); a pushed tag is used as it is.
+          gh release create $env:TAG "ForeverNotify-$env:TAG.zip" companion\dist\ForeverNotify.exe --target $env:SHA --title $env:TAG --latest=$env:LATEST --notes-file release-notes.md --generate-notes

@@ -120,4 +120,4 @@ cd companion && python -m unittest discover -s tests -t .           # decoder, f
 companion\build_exe.bat                                            # builds companion\dist\ForeverNotify.exe (PyInstaller)
 ```
 
-Pushing a `v*` tag (e.g. `git tag v0.2 && git push --tags`) makes CI build the exe and publish a release zip containing the exe, the example config and the add-on.
+To release: bump `## Version` in `addon/ForeverNotify/ForeverNotify.toc` and commit, then either run the **test** workflow by hand (Actions → test → Run workflow; optionally give a commit) or push a matching tag (`git tag v0.2.0 && git push origin v0.2.0`). CI checks the tag matches the add-on version, builds the exe and publishes the release (the exe, plus a zip with the exe, the example config and the add-on); a manual run creates the tag itself. Releasing an older version than one already out doesn't mark it as the latest.
