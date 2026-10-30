@@ -1,9 +1,12 @@
 name: test
 
+# Releases (tagged v<add-on version>) happen when:
+# - main gets a commit whose add-on version ('## Version' in ForeverNotify.toc) isn't released yet,
+# - someone runs this workflow by hand (Actions > test > Run workflow), optionally for an earlier commit, or
+# - a matching v* tag is pushed.
 on:
   push:
   pull_request:
-  # Release without pushing a tag: Actions > test > Run workflow. The commit's add-on version becomes the tag.
   workflow_dispatch:
     inputs:
       commit:
@@ -34,6 +37,7 @@ jobs:
         id: release
         env:
           EVENT: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           version=$(sed -n 's/^## Version: *//p' addon/ForeverNotify/ForeverNotify.toc | tr -d '\r')
           tag=""
@@ -49,6 +53,9 @@ jobs:
               echo "Tag $tag doesn't match '## Version: $version' in ForeverNotify.toc. Bump the .toc, commit, and tag that commit."
               exit 1
             fi
+          elif [ "$EVENT" = "push" ] && [ "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" ]; then
+            # A new add-on version on main is released; any other push to main only builds.
+            if ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then tag="v$version"; fi
           fi
           latest=true
           highest=$(git tag -l 'v*' | sort -V | tail -1)
