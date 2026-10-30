@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from .discord import DELETE_AFTER
+
+TEST_LINGER_SECONDS = 60  # test samples delete themselves after this long, so channels don't fill up
+
 COLOURS = {
     "DEATH": 0x8B0000,
     "LEVEL": 0xF1C40F,
@@ -304,6 +308,8 @@ def sample_messages(p: dict[str, str], pvp_mention: str = "") -> dict[str, dict]
     for body in samples.values():
         embed = body["embeds"][0]
         embed["title"] = "🧪 TEST · " + embed["title"]
-        note = "*Test message: if you can read this, this channel is set up correctly.*"
+        note = ("*Test message: if you can read this, this channel is set up correctly. "
+                "It deletes itself in about a minute.*")
         embed["description"] = (embed.get("description", "") + "\n\n" + note).strip()
+        body[DELETE_AFTER] = TEST_LINGER_SECONDS
     return samples

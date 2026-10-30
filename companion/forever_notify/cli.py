@@ -22,13 +22,38 @@ def default_config_path() -> Path:
     return Path(sys.executable).parent / "config.toml" if FROZEN else Path("config.toml")
 
 
-def send_tests(cfg: config.Config) -> bool:
+def pending_deletes(cfg: config.Config) -> discord.Expiring:
+    """Test messages waiting to delete themselves, kept next to config.toml so a restart still removes them."""
+    return discord.Expiring(cfg.state_file.with_name("pending_deletes.json") if cfg.state_file else None)
+
+
+def post_sample(url: str, body: dict, expiring: discord.Expiring) -> None:
+    message_id = discord.post(url, body)
+    if message_id:
+        expiring.add(url, message_id, body.get(discord.DELETE_AFTER, formatting.TEST_LINGER_SECONDS))
+
+
+def wait_for_test_cleanup(expiring: discord.Expiring) -> None:
+    """For one-off commands: stay open until the test messages have deleted themselves."""
+    if not len(expiring):
+        return
+    print("The test messages delete themselves in about a minute. Keep this window open until then "
+          "(Ctrl+C leaves them; ForeverNotify removes them the next time it runs).")
+    try:
+        expiring.wait_and_delete()
+        print("Test messages removed.")
+    except KeyboardInterrupt:
+        print("\nLeft the test messages for now.")
+
+
+def send_tests(cfg: config.Config, expiring: discord.Expiring | None = None) -> bool:
     """Post a sample of each notification to its channel. Returns True if all arrived."""
+    expiring = expiring if expiring is not None else pending_deletes(cfg)
     ok = True
     samples = formatting.sample_messages({"c": "Companion", "r": "PC", "ts": str(int(time.time()))}, cfg.pvp_mention)
     for event, label in setup_wizard.CHANNELS:
         try:
-            discord.post(cfg.webhook_for(event), samples[event])
+            post_sample(cfg.webhook_for(event), samples[event], expiring)
             print(f"Sent a sample {label} message.")
         except RuntimeError as e:
             print(f"Could not post the sample {label} message: {e}", file=sys.stderr)
@@ -67,12 +92,14 @@ def set_webhook(config_path: Path, channel: str, url: str | None, ask=input) -> 
     cfg = config.load(config_path)
     sample = formatting.sample_messages({"c": "Companion", "r": "PC", "ts": str(int(time.time()))},
                                         cfg.pvp_mention)[channel]
+    expiring = pending_deletes(cfg)
     try:
-        discord.post(cfg.webhook_for(channel), sample)
+        post_sample(cfg.webhook_for(channel), sample, expiring)
     except RuntimeError as e:
         print(f"Saved, but the sample message didn't reach Discord: {e}", file=sys.stderr)
         return 1
     print(f"Sent a sample {label} message; check that channel. Restart ForeverNotify if it's running.")
+    wait_for_test_cleanup(expiring)
     return 0
 
 
@@ -157,18 +184,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "install-addon":
         return 0 if addon_install.install_and_report(wow_dir) else 1
 
+    expiring = pending_deletes(cfg)
     if args.command == "test-webhook" or fresh_setup:
-        if not send_tests(cfg):
-            return 1
-        print("Check your Discord channels.")
+        ok = send_tests(cfg, expiring)
+        if ok:
+            print("Check your Discord channels.")
         if args.command == "test-webhook":
-            return 0
+            wait_for_test_cleanup(expiring)
+            return 0 if ok else 1
+        if not ok:
+            return 1
 
     if getattr(args, "dry_run", False):
         def send(url, body):
             print(json.dumps(body, indent=2, ensure_ascii=False))
     else:
-        sender = discord.Sender()
+        sender = discord.Sender(expiring=expiring)  # also removes test messages when their minute is up
         send = sender.send
 
     addon_install.sync_and_report(wow_dir)

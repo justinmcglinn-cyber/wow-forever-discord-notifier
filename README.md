@@ -65,7 +65,7 @@ Extra options (per-event channels, @mentions…) live in `config.toml`; open it 
 </details>
 
 ### 4. Check it end to end
-In game, type `/fnotify test`. Within a few seconds each channel should get a sample message marked 🧪 TEST: a death, a level-up, a PvP alert and a gold summary, each in the channel it's configured for. `ForeverNotify.exe test-webhook` sends the same samples without the game.
+In game, type `/fnotify test`. Within a few seconds each channel should get a sample message marked 🧪 TEST: a death, a level-up, a PvP alert and a gold summary, each in the channel it's configured for. `ForeverNotify.exe test-webhook` sends the same samples without the game. Test messages delete themselves after about a minute, so they don't clutter the channels (if the companion is closed first, it removes them the next time it runs).
 
 ## In-game commands
 

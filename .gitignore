@@ -8,3 +8,4 @@ dist/
 companion/baked_config.toml*
 companion/state.json
 companion/screenshot_cache.json
+companion/pending_deletes.json

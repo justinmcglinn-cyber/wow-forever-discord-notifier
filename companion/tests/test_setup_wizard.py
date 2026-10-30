@@ -182,9 +182,11 @@ class SetWebhook(unittest.TestCase):
 
     def test_command_saves_and_posts_sample_to_that_channel(self):
         path = self.write_config()
-        with mock.patch.object(cli.discord, "post") as post, redirect_stdout(io.StringIO()):
+        with mock.patch.object(cli.discord, "post", return_value="555") as post, \
+                mock.patch.object(cli, "wait_for_test_cleanup") as cleanup, redirect_stdout(io.StringIO()):
             code = cli.set_webhook(path, "pvp", None, ask=lambda _: WEBHOOK + "/pvp")
         self.assertEqual(code, 0)
+        self.assertEqual(len(cleanup.call_args.args[0]), 1, "the sample waits to delete itself")
         cfg = config.load(path)
         self.assertEqual(cfg.webhook_for("pvp"), WEBHOOK + "/pvp")
         self.assertEqual(cfg.webhook_for("flag"), WEBHOOK + "/pvp")  # flag alerts follow the PvP channel
