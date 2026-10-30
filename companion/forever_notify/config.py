@@ -40,6 +40,7 @@ class Config:
     wow_dir: Path | None = None
     state_file: Path | None = None  # remembers posted summaries; None = in memory only
     catch_up_seconds: float = 600  # signals saved this long before start-up are still posted
+    check_for_updates: bool = True  # ask GitHub for a newer release at start-up
 
     def webhook_for(self, event: str) -> str:
         return self.webhooks.get(event) or (event == "flag" and self.webhooks.get("pvp")) or self.webhook_url
@@ -105,4 +106,5 @@ def load(path: str | Path) -> Config:
         wow_dir=Path(wow_dir) if wow_dir else None,
         state_file=path.parent / "state.json",
         catch_up_seconds=float(raw.get("catch_up_minutes", 10)) * 60,
+        check_for_updates=bool(raw.get("check_for_updates", True)),
     )

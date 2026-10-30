@@ -78,11 +78,12 @@ jobs:
           $notes = @(
             "Built by GitHub Actions from commit ${{ github.sha }} ([build log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})).",
             "",
-            "SHA-256 of ``ForeverNotify.exe`` (inside the zip): ``$exe``",
+            "SHA-256 of ``ForeverNotify.exe`` (attached, and inside the zip): ``$exe``",
             "SHA-256 of ``ForeverNotify-${{ github.ref_name }}.zip``: ``$zip``",
             "",
             "Check your copy in PowerShell: ``Get-FileHash .\ForeverNotify.exe``. With the GitHub CLI, ``gh attestation verify ForeverNotify.exe -R ${{ github.repository }}`` also confirms it was built here.",
             ""
           ) -join "`n"
           Set-Content -Path release-notes.md -Value $notes -Encoding utf8
-          gh release create ${{ github.ref_name }} ForeverNotify-${{ github.ref_name }}.zip --title ${{ github.ref_name }} --notes-file release-notes.md --generate-notes
+          # The exe on its own is what the companion's updater downloads.
+          gh release create ${{ github.ref_name }} ForeverNotify-${{ github.ref_name }}.zip companion\dist\ForeverNotify.exe --title ${{ github.ref_name }} --notes-file release-notes.md --generate-notes

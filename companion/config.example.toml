@@ -23,6 +23,9 @@ summary_grace_seconds = 30
 # How often to check for new screenshots (seconds).
 poll_seconds = 0.2
 
+# At start-up, check GitHub for a newer ForeverNotify and ask before installing it.
+check_for_updates = true
+
 # REQUIRED: the Discord channel each kind of message goes to, as webhook URLs
 # (channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL).
 # Keep them private: anyone with one can post to that channel.

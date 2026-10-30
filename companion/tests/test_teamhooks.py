@@ -107,6 +107,7 @@ class TeamSetup(unittest.TestCase):
                 mock.patch.object(cli.sys, "stdin", tty), \
                 mock.patch.object(cli, "send_tests", return_value=True) as send_tests, \
                 mock.patch.object(cli.addon_install, "sync_and_report"), mock.patch.object(cli.app, "run"), \
+                mock.patch.object(cli.updater, "offer_update", return_value=False), \
                 redirect_stdout(io.StringIO()):
             code = cli.main(["-c", str(self.path), "run"])
         self.assertEqual(code, 0)

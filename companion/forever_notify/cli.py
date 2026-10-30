@@ -10,7 +10,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from . import addon_install, app, config, discord, formatting, setup_wizard
+from . import addon_install, app, config, discord, formatting, setup_wizard, updater
 from .signal_decode import decode_file
 
 FROZEN = getattr(sys, "frozen", False)  # running as ForeverNotify.exe
@@ -129,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     hook_p.add_argument("channel", choices=names + [event for event, _ in setup_wizard.CHANNELS],
                         metavar="{" + ",".join(names) + "}")
     hook_p.add_argument("url", nargs="?", help="webhook URL (asked for if left out)")
+    sub.add_parser("update", help="check for a newer ForeverNotify and install it (asks first)")
     decode_p = sub.add_parser("decode", help="decode signal screenshots and print their payloads")
     decode_p.add_argument("files", nargs="+")
     args = parser.parse_args(argv)
@@ -139,6 +140,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "decode":
         for path in args.files:
             print(path, json.dumps(decode_file(path), ensure_ascii=False))
+        return 0
+
+    if FROZEN:
+        updater.cleanup_leftovers(Path(sys.executable))  # the previous exe, after an update
+    restart_args = ["-c", str(args.config)] + (["-v"] if args.verbose else []) + ["run"]
+    if args.command == "update":
+        if updater.offer_update(args.config.parent, FROZEN, argv=restart_args, force=True) and FROZEN:
+            updater.exit_now()  # the new version has started in this window
         return 0
 
     baked = setup_wizard.resource_path(BAKED_CONFIG)
@@ -194,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if ok else 1
         if not ok:
             return 1
+
+    if cfg.check_for_updates and not getattr(args, "dry_run", False):
+        interactive = bool(sys.stdin and sys.stdin.isatty())
+        if updater.offer_update(args.config.parent, FROZEN, argv=restart_args, interactive=interactive):
+            if FROZEN:
+                updater.exit_now()  # the new version has started in this window
+            return 0
 
     if getattr(args, "dry_run", False):
         def send(url, body):
