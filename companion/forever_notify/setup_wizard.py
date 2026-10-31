@@ -173,6 +173,57 @@ def add_webhooks(config_path: Path, ask: Callable[[str], str] = input) -> None:
     print(f"\nSaved {config_path}\n")
 
 
+def clear_webhooks(text: str) -> str:
+    """Empty every webhook in config.toml text (current and old names), keeping the lines and their comments."""
+    text = set_value(_drop_top_level_webhook_url(text), "webhooks", "default", '""')
+    for event, name in config.NAMES.items():
+        if event != "test":
+            text = set_value(text, "webhooks", name, '""', drop=(event,))
+    return text
+
+
+def reset_channels(config_path: Path, ask: Callable[[str], str] = input) -> None:
+    """Ask for the Discord channels again and save them, replacing all the old ones; other settings are kept."""
+    webhook, webhooks = _ask_webhooks(ask, "Reset Discord channels")
+    text = clear_webhooks(upgrade_names(config_path.read_text(encoding="utf-8-sig")))
+    config_path.write_text(set_webhooks(text, webhook, webhooks), encoding="utf-8")
+    print(f"\nSaved the new Discord channels to {config_path}\n")
+
+
+PATH_OVERRIDES = ("screenshots_dir", "saved_variables_glob")
+
+
+def set_wow_dir(text: str, wow_dir: str) -> tuple[str, list[str]]:
+    """Point config.toml text at a new WoW folder. Path overrides that would still point at the old folder are
+    removed. Returns the new text and the names of the overrides removed."""
+    first_table = re.search(r'(?m)^\[', text)
+    head, tail = (text[:first_table.start()], text[first_table.start():]) if first_table else (text, "")
+    line = f"wow_dir = {toml_string(wow_dir)}"
+    if re.search(r'(?m)^wow_dir\s*=', head):
+        head = re.sub(r'(?m)^wow_dir\s*=.*$', lambda _: line, head, count=1)
+    else:
+        head = line + "\n" + head
+    removed = [key for key in PATH_OVERRIDES if re.search(rf'(?m)^{key}\s*=', head)]
+    for key in removed:
+        head = re.sub(rf'(?m)^{key}\s*=.*\n?', "", head)
+    return head + tail, removed
+
+
+def reset_wow_folder(config_path: Path, ask: Callable[[str], str] = input, candidates: list[Path] | None = None,
+                     install_addon: Callable[[Path], bool] = addon_install.install_and_report) -> Path:
+    """Ask for the WoW folder again, save it and install the add-on there. Returns the new folder."""
+    wow_dir = _ask_wow_dir(ask, find_wow_dirs() if candidates is None else candidates, "Reset WoW folder")
+    text, removed = set_wow_dir(config_path.read_text(encoding="utf-8-sig"), wow_dir)
+    config_path.write_text(text, encoding="utf-8")
+    print(f"\nSaved the WoW folder to {config_path}")
+    if removed:
+        print(f"Removed {' and '.join(removed)}, which pointed at the old folder.")
+    print()
+    install_addon(Path(wow_dir))
+    print()
+    return Path(wow_dir)
+
+
 def _ask_wow_dir(ask: Callable[[str], str], candidates: list[Path], step: str = "Step 2 of 2") -> str:
     print(f"\n{step}: WoW Forever folder (the one containing Screenshots and WTF)")
     for i, path in enumerate(candidates, 1):
@@ -205,6 +256,6 @@ def run(config_path: Path, ask: Callable[[str], str] = input, candidates: list[P
     config_path.write_text(render_config(template, webhook, wow_dir, webhooks), encoding="utf-8")
     print(f"\nSaved {config_path}")
     print("Edit it in Notepad for extra options (@mentions, turning events off...).")
-    print("Run 'ForeverNotify.exe setup' to start this setup again.\n")
+    print("To change the Discord channels or WoW folder later, press Space then C or W while ForeverNotify is running.\n")
     install_addon(Path(wow_dir))
     print()

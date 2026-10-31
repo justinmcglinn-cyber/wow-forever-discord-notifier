@@ -15,7 +15,8 @@ Owner: justinmcglinn-cyber (Perth, WA; network infrastructure analyst). Public r
   `Played.lua` (/played per level), `PvP.lua` (attack detection from target/nameplates), `Kills.lua` (honour kills,
   battle reports), `Core.lua` (events, /fnotify). Companion: `cli.py`, `config.py`, `setup_wizard.py`, `teamhooks.py`
   (team code `FNTEAM1-…`), `sweep.py` (start-up clean-up of leftover signal screenshots), `updater.py` (self-update),
-  `jsonstate.py` (state files), `addon_install.py` (installs/updates the bundled add-on).
+  `jsonstate.py` (state files), `addon_install.py` (installs/updates the bundled add-on), `keyhints.py` (the
+  highlighted shortcut line).
 
 ## Hard-won facts about the Forever client
 
@@ -46,9 +47,12 @@ and publishes `v<version>` (tag created by the release; exe attached on its own 
 Also possible: Actions → test → Run workflow (optionally a commit), or push a matching tag. Cloud Claude sessions can push
 to main but can't push tags, delete branches or start workflows, which is why release-on-version-bump exists.
 
-## Status (30 Oct 2026)
+## Status (31 Oct 2026)
 
-- Latest release: **v0.1.14** (0969141). Features: deaths, level-ups (time played at level), PvP attack alerts, PvP kills +
+- Latest release: **v0.1.15**: adds Reset Discord channels / Reset WoW folder. In the companion window Space opens a
+  shortcuts menu (also open for 15 s at start; closes on its own or with Esc); C or W then asks that setup question again,
+  saves it (other settings kept) and carries on watching. Also `ForeverNotify.exe reset-channels` / `reset-wow-folder`.
+- v0.1.14 (0969141) features: deaths, level-ups (time played at level), PvP attack alerts, PvP kills +
   battle reports, PvP flag, logout gold summary; test messages delete themselves after ~60s (`pending_deletes.json`);
   start-up sweep of leftover signal screenshots; decoding works 720p–5K, windowed (2.4–15px blocks).
 - v0.1.13 (3776fbc) is the first exe with the updater; it was never released, but its exe is the `ForeverNotify-windows`
@@ -58,11 +62,11 @@ to main but can't push tags, delete branches or start workflows, which is why re
 
 ## Next steps
 
-1. Test the updater for real: run the v0.1.13 artifact exe → it should offer v0.1.14 → Y → it swaps itself and restarts.
-   Only the simulated path is tested so far (swap relies on PyInstaller allowing a running exe to be renamed; the old copy
-   exits immediately via `updater.exit_now()`).
-2. Then post the v0.1.14 Discord announcement (install = download `ForeverNotify.exe` from the v0.1.14 release; exe SHA-256
-   FB03EDB404E53659813DF6FB12C22DC8489C7174476E92F17FF0938F3F944FAA; v0.1.11 users replace the exe once).
+1. Updater tested for real on 31 Oct: v0.1.13 → v0.1.14 downloaded, checksum OK, swapped and restarted in the same window,
+   add-on updated, no re-offer. Still to see for real: v0.1.14 → v0.1.15 (first update that writes `installed` to
+   `update.json`; v0.1.13 only recorded skips).
+2. Then post the Discord announcement for the latest release (install = download `ForeverNotify.exe` from the release;
+   v0.1.11 users replace the exe once; Space → C/W to change channels or folder).
 3. Repo housekeeping (owner, in GitHub UI): fill the About box; delete merged branches `kill-noise`, `pvp-kills`,
    `windows-exe` and `ccr-9030cd7a-e3c2tv` (Discord-bot scoping notes, dropped: no bot for now).
 4. Feature roadmap agreed (no bot; every member runs the exe; add-ons talk via hidden add-on messages; each shared event

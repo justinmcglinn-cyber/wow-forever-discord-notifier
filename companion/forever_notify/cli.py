@@ -6,10 +6,11 @@ import argparse
 import json
 import logging
 import sys
+import time
 import tomllib
 from pathlib import Path
 
-from . import addon_install, app, config, discord, formatting, setup_wizard, updater
+from . import addon_install, app, config, discord, formatting, keyhints, setup_wizard, updater
 from .signal_decode import decode_file
 
 FROZEN = getattr(sys, "frozen", False)  # running as ForeverNotify.exe
@@ -124,6 +125,10 @@ def build_parser() -> argparse.ArgumentParser:
     hook_p.add_argument("channel", choices=names + [event for event, _ in setup_wizard.CHANNELS],
                         metavar="{" + ",".join(names) + "}")
     hook_p.add_argument("url", nargs="?", help="webhook URL (asked for if left out)")
+    sub.add_parser("reset-channels", help="choose the Discord channels again (team code or your own webhooks); "
+                   "other settings are kept. Or press C while ForeverNotify is running")
+    sub.add_parser("reset-wow-folder", help="choose the WoW Forever folder again and install the add-on there. "
+                   "Or press W while ForeverNotify is running")
     sub.add_parser("update", help="check for a newer ForeverNotify and install it (asks first)")
     decode_p = sub.add_parser("decode", help="decode signal screenshots and print their payloads")
     decode_p.add_argument("files", nargs="+")
@@ -182,8 +187,97 @@ def _prepare_config(args) -> tuple[config.Config, bool] | int:
     return cfg, fresh_setup
 
 
+RESETS = {"c": "channels", "w": "wow_folder"}  # keys that can be pressed while watching
+KEY_HINTS = [("C", "Change Discord channels"), ("W", "Change WoW folder"), ("Esc", "Close")]
+SHORTCUTS_SECONDS = 15
+
+
+class ResetKeys:
+    """While watching: a small shortcuts menu in the console window. Space opens it (show() lists the keys);
+    it closes after SHORTCUTS_SECONDS or on Esc (closed()). While it's open, C or W stops app.run (this is its
+    stop() check) so watching pauses for the question and then carries on; while it's closed they do nothing,
+    so a stray key press can't start a reset. Windows console only; elsewhere it never stops anything."""
+
+    def __init__(self, enabled: bool, show=lambda: None, closed=lambda: None, clock=time.monotonic):
+        self.enabled = enabled and sys.platform == "win32"
+        self.show, self.closed, self.clock = show, closed, clock
+        self.open_until = 0.0
+        self.pressed: str | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.open_until > 0
+
+    def open(self) -> None:
+        self.open_until = self.clock() + SHORTCUTS_SECONDS
+        self.show()
+
+    def close(self) -> None:
+        if self.is_open:
+            self.open_until = 0.0
+            self.closed()
+
+    def __call__(self) -> bool:
+        if not self.enabled:
+            return False
+        if self.is_open and self.clock() >= self.open_until:
+            self.close()
+        import msvcrt
+        while msvcrt.kbhit():
+            ch = msvcrt.getwch()
+            if ch in ("\x00", "\xe0"):  # arrow/function key: ignore it and its second code
+                msvcrt.getwch()
+            elif ch == " ":
+                self.open()
+            elif ch == "\x1b":
+                self.close()
+            elif self.is_open and ch.lower() in RESETS:
+                self.pressed = RESETS[ch.lower()]
+                self.open_until = 0.0
+                return True
+        return False
+
+
+def reset(config_path: Path, which: str, expiring: discord.Expiring | None = None, ask=input) -> config.Config:
+    """Ask the Discord channels ("channels") or WoW folder ("wow_folder") question again and save the answer.
+    New channels get a sample message each. Returns the reloaded config; EOFError/KeyboardInterrupt = cancelled."""
+    if which == "channels":
+        setup_wizard.reset_channels(config_path, ask)
+        cfg = config.load(config_path)
+        if send_tests(cfg, expiring):
+            print("Check your Discord channels.")
+        return cfg
+    setup_wizard.reset_wow_folder(config_path, ask)
+    return config.load(config_path)
+
+
+def _reset_command(args) -> int:
+    """reset-channels / reset-wow-folder run on their own."""
+    if not args.config.exists():
+        print(f"No {args.config.name} yet: start ForeverNotify normally and it will ask both questions.")
+        return 2
+    try:
+        cfg = config.load(args.config)
+    except config.ConfigError:
+        cfg = None  # fixing what's broken is the point; only the expiry file location needs a config
+    expiring = pending_deletes(cfg) if cfg else None
+    try:
+        reset(args.config, "channels" if args.command == "reset-channels" else "wow_folder", expiring)
+    except (EOFError, KeyboardInterrupt):
+        print("\nCancelled; config.toml not changed.", file=sys.stderr)
+        return 2
+    except config.ConfigError as e:
+        print(f"Saved, but the config doesn't load: {e}", file=sys.stderr)
+        return 2
+    if expiring:
+        wait_for_test_cleanup(expiring)
+    print("Done. Start ForeverNotify as usual.")
+    return 0
+
+
 def _watch(args, cfg: config.Config, expiring: discord.Expiring, restart_args: list[str]) -> int:
-    """The normal run: offer an update, keep the add-on current, then post events until stopped."""
+    """The normal run: offer an update, keep the add-on current, then post events until stopped.
+    Pressing C or W pauses watching to choose the Discord channels or WoW folder again."""
     dry_run = getattr(args, "dry_run", False)
     if cfg.check_for_updates and not dry_run and _offer_update(args, restart_args, interactive=_interactive()):
         return 0
@@ -193,13 +287,29 @@ def _watch(args, cfg: config.Config, expiring: discord.Expiring, restart_args: l
     else:
         send = discord.Sender(expiring=expiring).send  # also removes test messages when their minute is up
 
+    hints = keyhints.KeyHints(KEY_HINTS)
+    keys = ResetKeys(_interactive(), show=hints.show, closed=hints.closed)
     addon_install.sync_and_report(cfg.wow_dir or cfg.screenshots_dir.parent)
     print("ForeverNotify is running. Leave this window open while you play; close it or press Ctrl+C to stop.")
-    try:
-        app.run(cfg, send)
-    except KeyboardInterrupt:
-        logging.info("Stopped.")
-    return 0
+    if keys.enabled:
+        keys.open()
+    while True:
+        try:
+            app.run(cfg, send, stop=keys)
+        except KeyboardInterrupt:
+            logging.info("Stopped.")
+            return 0
+        if keys.pressed is None:
+            return 0
+        which, keys.pressed = keys.pressed, None
+        print()
+        try:
+            cfg = reset(args.config, which, expiring)
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled; nothing changed.")
+        except config.ConfigError as e:
+            print(f"That didn't work: {e}. Carrying on with the previous settings.", file=sys.stderr)
+        print("Watching again. Press Space for the shortcuts.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -221,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "update":
         _offer_update(args, restart_args, force=True)
         return 0
+    if args.command in ("reset-channels", "reset-wow-folder"):
+        return _reset_command(args)
 
     prepared = _prepare_config(args)
     if isinstance(prepared, int):
