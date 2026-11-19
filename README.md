@@ -2,7 +2,7 @@
 
 **World of Warcraft: Forever → Discord.** An add-on plus a small Windows app that posts your deaths, level-ups, PvP fights and kills, and a gold summary when you log out, to your guild's Discord channels as text, as they happen.
 
-It's built for guilds where everyone runs it: each player's events land in the shared channels, test messages tidy themselves away, and the app updates itself.
+It's built for guilds where everyone runs it: each player's events land in the shared channels, setting up posts nothing to them, and the app updates itself.
 
 **[Download ForeverNotify.exe](https://github.com/justinmcglinn-cyber/wow-forever-discord-notifier/releases/latest/download/ForeverNotify.exe)** · [All releases](https://github.com/justinmcglinn-cyber/wow-forever-discord-notifier/releases)
 
@@ -14,7 +14,7 @@ Have your guild's **team code** ready: it's in the pinned message of your guild'
 2. Run it. If Windows SmartScreen says it protected your PC (the app isn't code-signed), click **More info**, then **Run anyway**.
 3. When it asks, paste the team code (copy it with the copy button on the code block in Discord; right-click pastes into the window). There's nothing else to answer.
 
-It then does the rest by itself: installs itself in `%LOCALAPPDATA%\ForeverNotify` (with a Start menu shortcut; you can delete the downloaded file), finds your WoW Forever folder, installs the add-on, posts a test message to each channel (they delete themselves after about a minute) and turns on **start with Windows**. It finishes with a short summary (`All set:` with the channels, WoW folder, add-on, start with Windows and test messages), minimises its window and keeps watching. If WoW Forever was already running, it tells you to type `/reload` in game.
+It then does the rest by itself: installs itself in `%LOCALAPPDATA%\ForeverNotify` (with a Start menu shortcut; you can delete the downloaded file), finds your WoW Forever folder, installs the add-on, checks with Discord that every channel works (quietly: nothing is posted, and it only says something if a channel doesn't work) and turns on **start with Windows**. It finishes with a short summary (`All set:` with the channels, WoW folder, add-on and start with Windows), minimises its window and keeps watching. If WoW Forever was already running, it tells you to type `/reload` in game.
 
 To change anything later, press **Space** in the ForeverNotify window, then **C** (Discord channels, e.g. a new team code), **W** (WoW Forever folder) or **A** (start with Windows on/off). If it can't find your WoW folder by itself, it asks.
 
@@ -23,11 +23,11 @@ Already running ForeverNotify? Don't download it again: it updates itself, and n
 
 ## What it posts
 
-- 💀 **Death**: where you died, and who killed you (player or NPC) when known
+- 💀 **Death**: where you died, and who killed you (player or NPC) when known. Not posted inside raids and dungeons (the group leader's raid or dungeon post shows the wipes instead), battlegrounds or arenas
 - ⬆️ **Level up**: new level, location, time played at the previous level (as in `/played`, so offline time doesn't count)
-- ⚔️ **PvP attack**: your location (zone, subzone, coordinates, zone type), attacker name, level, race, class and guild, your health, and the number of hostile players nearby
+- ⚔️ **PvP attack**: your location (zone, subzone, coordinates, zone type), attacker name, level, race, class and guild, your health, and the number of hostile players nearby. World PvP only: not in battlegrounds or arenas
 - 🗡️ **PvP kill**: each enemy-faction player *you* killed (in a group: your target when they died), with their level, class, race and guild when they were your target or had a nameplate, honor earned, your kill streak since your last death, and DOUBLE / TRIPLE / MULTI-KILL and KILLING SPREE → LEGENDARY callouts. Solo, every honorable kill is yours
-- ⚔️ **Battle report**: one post per group fight (after 30 s out of combat) with your kills, the group's kills, honor, fight length and the enemies seen dying, instead of a post for every kill your group got
+- ⚔️ **Battle report**: one post per group fight (after 30 s out of combat) with your kills, the group's kills, honor, fight length and the enemies seen dying, instead of a post for every kill your group got. Posted by the group leader's ForeverNotify only, so a fight gets one report however many of you run it
 - 💰 **Logout gold summary**: session length, net gold change and gold/hour, income and spending by source (loot, quests, vendor, AH, mail…), deaths, levels gained, and total gold across all your characters
 
 
@@ -41,7 +41,7 @@ For each channel: in Discord, **Server Settings → Integrations → Webhooks �
 
 Press **Space** in the ForeverNotify window to open the shortcuts, then:
 
-- **C**: choose the Discord channels again (a new team code, or your own webhooks). New channels get a test message each.
+- **C**: choose the Discord channels again (a new team code, or your own webhooks). The new channels are checked quietly; only a channel that doesn't work is reported.
 - **W**: choose the WoW Forever folder again (the add-on is installed there).
 - **A**: start with Windows on or off.
 
@@ -58,6 +58,8 @@ More options (turning a kind of message off, an @mention on PvP alerts so your p
 | `pvp_kills` | 🗡️ Your PvP kills and group battle reports |
 | `gold_summary` | 💰 Gold summary after logout |
 | `pvp_flag` | PvP flag on/off (only with `/fnotify flag` in game); empty = `pvp_alerts` |
+| `raid_nights` | 🏰 Raid-night feed (raid leaders; a Discord forum channel). Never uses `default` |
+| `dungeons` | Dungeon runs (a plain text channel). Never uses `default` |
 
 `[notify]` uses the same names (plus `test_messages`) to turn each kind off.
 
@@ -71,18 +73,46 @@ Windows SmartScreen may warn that the app is unrecognised, because it isn't code
 
 ## Check it works
 
-In game, type `/fnotify test`. Within a few seconds each channel should get a sample message marked 🧪 TEST, each in the channel it's set up for. Test messages delete themselves after about a minute.
+In game, type `/fnotify test`. Within a few seconds the ForeverNotify window shows the test arriving (`Signal TEST`) and checks every channel with Discord, the raid-night and dungeon channels included. Nothing is posted to Discord: the window only says something if a channel doesn't work.
 
 ## In-game commands
 
 | Command | Effect |
 |---|---|
 | `/fnotify` | Show status and which notifications are on |
-| `/fnotify test` | Send a sample of every notification, each to its channel |
+| `/fnotify test` | Check the whole path from the game to the ForeverNotify window, and every Discord channel (posts nothing) |
 | `/fnotify death` / `level` / `pvp` / `kill` / `summary` / `flag` | Toggle that notification (`flag` = PvP flag on/off, off by default) |
+| `/fnotify raid` / `photos` / `dungeons` | Toggle the raid-night feed (on), the boss-kill photo question (on) or dungeon runs (on); see [Raid nights](#raid-nights) |
+| `/fnotify photo` | Take the boss-kill group photo now |
+| `/fnotify record` | Start recording this raid night or dungeon run after saying "Not this time" (raid or party leader) |
+| `/fnotify probe` | Check what the game allows for the raid-night feed and save the report |
 | `/fnotify combatlog` | Turn combat-log reading on/off (off by default on Forever, which forbids it) |
 | `/fnotify preview` | Show the signal grid for 5 seconds without taking a screenshot |
 | `/fnotify debug` | Toggle debug output in chat |
+
+## Raid nights
+
+For raid leaders (and dungeon leaders). Get the guild's raid team code from the members-only channel and paste it with **Space** then **C**; it adds the `raid_nights` channel (a Discord forum) and, if the guild uses one, the `dungeons` channel. Nobody else in the raid needs to do anything: only the raid leader's ForeverNotify posts, and if the leader doesn't run it there's no feed that night. Nothing pings anyone.
+
+**Recording is the leader's choice**: when you start leading a raid (or a dungeon party) inside the instance, a popup asks "post this raid night to your guild's Discord?". **Record** posts it; **Not this time** posts nothing for that raid or run. Changed your mind? Type `/fnotify record` to start recording after all. A `/reload` keeps your answer, and a raid night that moves on to another raid carries on without asking again.
+
+Using your own channels instead of a team code? Close ForeverNotify and, in a Command Prompt, run `%LOCALAPPDATA%\ForeverNotify\ForeverNotify.exe set-webhook raid_nights` (paste the forum channel's webhook when asked; it also starts the **Guild records** post) and `... set-webhook dungeons` for a dungeons text channel. Then start ForeverNotify again.
+
+**What gets posted**: one forum post per night, named after the raid and the date (e.g. "Molten Core – Thu 11 Dec"), started at the first boss pull. In it, as they happen:
+
+- **Boss kills**: fight time, the attempt number that night, "first guild kill" when the boss isn't in the guild records yet, and a group photo
+- **Wipes**: how far into the fight, and the boss's health when the game allows it
+- **Loot** of epic quality or better: the item, who won it and every roll (Need, Greed, Disenchant), highest first
+
+**The group photo** is optional: after each boss kill the raid leader is asked "Take a group photo?". **Skip** (or no answer within a minute) takes none. **Count down** starts a 10-second countdown, "Group photo in 10 – face the boss", so the raid can turn to the boss; click **Take now** (or type `/fnotify photo`) to take it straight away. The photo is taken with the whole UI hidden for a moment and uploaded to the night's post. In combat it waits up to 10 seconds more for combat to end. `/fnotify photos` turns the photo question off altogether (and on again).
+
+**End of the night**: when the raid's final boss dies, the leader is asked "Raid complete – post the night's summary?". **Post summary** ends the night; **Not yet** carries on (you're asked again at the next final-boss kill). The night also ends after 10 minutes out of the group, or at logout. The summary is put at the top of the post: the full loot list with rolls, and each boss's kill time, marked when it sets or beats the guild record. The shared **Guild records** post in the forum keeps the best time for each boss across all raid leaders.
+
+**Dungeon runs** (on by default; type `/fnotify dungeons` to turn them off): posted when you lead the party, say **Record** when asked, and your guild has a `dungeons` channel. Each run is one message when the last boss dies or you leave: run time, bosses with kills and wipes, epic loot with rolls, the party, and a group photo of the final boss.
+
+**Before the first raid**: type `/fnotify probe` in a dungeon or raid (best after a boss fight with a loot roll) and share what it prints with your officers. It checks what the Forever client allows: encounter events, boss health, loot-roll chat lines, which boss is last, and hiding the UI for the photo.
+
+`/fnotify raid` turns the whole feed off for you (and on again).
 
 ## Keeping the team code inside the guild
 
@@ -119,6 +149,6 @@ ForeverNotify only reads files the game writes. It never touches the game proces
 
 ## Troubleshooting
 
-1. **Nothing in Discord?** Type `/fnotify test` in game. A sample should reach every channel within a few seconds, and the ForeverNotify window should log it. If the window shows nothing, check the add-on is enabled at character select and that ForeverNotify points at the right WoW Forever folder (press **Space** then **W** in the ForeverNotify window to choose it again).
+1. **Nothing in Discord?** Type `/fnotify test` in game. Within a few seconds the ForeverNotify window should log `Signal TEST`, plus a line for any channel that doesn't work. If the window shows nothing, check the add-on is enabled at character select and that ForeverNotify points at the right WoW Forever folder (press **Space** then **W** in the ForeverNotify window to choose it again).
 2. **Something missing or odd?** Type `/fnotify` and check no "Blocked by the game" lines are listed.
 3. **Reporting a problem:** turn on `/fnotify debug`, run ForeverNotify with `ForeverNotify.exe -v run`, reproduce it, and share what the window printed.
