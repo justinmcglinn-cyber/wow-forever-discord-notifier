@@ -102,13 +102,13 @@ Using your own channels instead of a team code? Close ForeverNotify and, in a Co
 
 - **Boss kills**: fight time, the attempt number that night, "first guild kill" when the boss isn't in the guild records yet, and a group photo
 - **Wipes**: how far into the fight, and the boss's health when the game allows it
-- **Loot** of epic quality or better: the item, who won it and every roll (Need, Greed, Disenchant), highest first
+- **Loot** of epic quality or better: the item, who won it and the Need rolls, highest first
 
 **The group photo** is optional: after each boss kill the raid leader is asked "Take a group photo?". **Skip** (or no answer within a minute) takes none. **Count down** starts a 10-second countdown, "Group photo in 10 – face the boss", so the raid can turn to the boss; click **Take now** (or type `/fnotify photo`) to take it straight away. The photo is taken with the whole UI hidden for a moment and uploaded to the night's post. In combat it waits up to 10 seconds more for combat to end. `/fnotify photos` turns the photo question off altogether (and on again).
 
 **End of the night**: when the raid's final boss dies, the leader is asked "Raid complete – post the night's summary?". **Post summary** ends the night; **Not yet** carries on (you're asked again at the next final-boss kill). The night also ends after 10 minutes out of the group, or at logout. The summary is put at the top of the post: the full loot list with rolls, and each boss's kill time, marked when it sets or beats the guild record. The shared **Guild records** post in the forum keeps the best time for each boss across all raid leaders.
 
-**Dungeon runs** (on by default; type `/fnotify dungeons` to turn them off): posted when you lead the party, say **Record** when asked, and your guild has a `dungeons` channel. Each run is one message when the last boss dies or you leave: run time, bosses with kills and wipes, epic loot with rolls, the party, and a group photo of the final boss.
+**Dungeon runs** (on by default; type `/fnotify dungeons` to turn them off): posted when you lead the party, say **Record** when asked, and your guild has a `dungeons` channel. Each run is one message when the last boss dies or you leave: run time, bosses with kills and wipes, every item the group rolled on and who won it (with the Need rolls for epic items), the party, and a group photo of the final boss.
 
 **Before the first raid**: type `/fnotify probe` in a dungeon or raid (best after a boss fight with a loot roll) and share what it prints with your officers. It checks what the Forever client allows: encounter events, boss health, loot-roll chat lines, which boss is last, and hiding the UI for the photo.
 
@@ -134,7 +134,23 @@ If ForeverNotify wasn't running when a signal was taken, it cleans up at its nex
 
 The grid is drawn in physical screen pixels, so resolution, UI scale and window size don't matter: it decodes from 720p to 4K and ultrawide, and in windowed mode.
 
-ForeverNotify only reads files the game writes. It never touches the game process and never sends keystrokes. Your own screenshots are never changed or uploaded.
+ForeverNotify only reads files the game writes. It never touches the game process and never sends keystrokes. Your own screenshots are never changed or uploaded (the only picture it uploads is the raid or dungeon group photo, taken by the add-on when the leader chooses **Count down**).
+
+
+## Privacy: what it sends and what it keeps
+
+**What goes to Discord**, and only to the channels your guild set up (through the team code or your own webhooks):
+
+- Your character's name, level and where you are (zone, area, coordinates) with each death, level-up and PvP alert.
+- Who attacked or killed you, and the enemy players you killed (name, level, class, race, guild), as the game showed them.
+- Time played per level, and after logout your gold for the session (earned and spent by source) and across your characters.
+- If you lead a raid or dungeon run and choose to record it: the bosses, fight times and wipes, the loot and who won it (Need rolls for epic items), the party's names, classes and levels, and the group photo.
+
+**Nothing else is sent anywhere.** There's no account, no analytics and nothing sent to the developer. Besides your guild's Discord webhooks, ForeverNotify only contacts GitHub, to check for and download updates.
+
+**What stays on your PC**, in `%LOCALAPPDATA%\ForeverNotify`: `config.toml` (your settings and the guild's webhook addresses) and small state files so nothing is posted twice. The add-on keeps its own saved data in your WoW folder like any add-on. Signal screenshots are deleted as soon as they're read, and a group photo is deleted once Discord has it.
+
+**Keep the team code and webhook addresses private.** Anyone who has them can post into your guild's channels, so never paste them in public places (including GitHub). If one leaks, see [Keeping the team code inside the guild](#keeping-the-team-code-inside-the-guild).
 
 
 ## Limits
