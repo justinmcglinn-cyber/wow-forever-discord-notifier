@@ -84,6 +84,7 @@ In game, type `/fnotify test`. Within a few seconds the ForeverNotify window sho
 | `/fnotify death` / `level` / `pvp` / `kill` / `summary` / `flag` | Toggle that notification (`flag` = PvP flag on/off, off by default) |
 | `/fnotify raid` / `photos` / `dungeons` | Toggle the raid-night feed (on), the boss-kill photo question (on) or dungeon runs (on); see [Raid nights](#raid-nights) |
 | `/fnotify photo` | Take the boss-kill group photo now |
+| `/fnotify end` | End the dungeon run (group photo, then posted) or raid night now, and remember the last boss you killed as that instance's final boss (leader) |
 | `/fnotify record` | Start recording this raid night or dungeon run after saying "Not this time" (raid or party leader) |
 | `/fnotify probe` | Check what the game allows for the raid-night feed and save the report |
 | `/fnotify combatlog` | Turn combat-log reading on/off (off by default on Forever, which forbids it) |
@@ -108,7 +109,7 @@ Using your own channels instead of a team code? Close ForeverNotify and, in a Co
 
 **End of the night**: when the raid's final boss dies, the leader is asked "Raid complete – post the night's summary?". **Post summary** ends the night; **Not yet** carries on (you're asked again at the next final-boss kill). The night also ends after 10 minutes out of the group, or at logout. The summary is put at the top of the post: the full loot list with rolls, and each boss's kill time, marked when it sets or beats the guild record. The shared **Guild records** post in the forum keeps the best time for each boss across all raid leaders.
 
-**Dungeon runs** (on by default; type `/fnotify dungeons` to turn them off): posted when you lead the party, say **Record** when asked, and your guild has a `dungeons` channel. Each run is one message when the last boss dies or you leave: run time, bosses with kills and wipes, every item the group rolled on and who won it (with the Need rolls for epic items), the party, and a group photo of the final boss.
+**Dungeon runs** (on by default; type `/fnotify dungeons` to turn them off): posted when you lead the party, say **Record** when asked, and your guild has a `dungeons` channel. Each run is one message when the last boss dies or you leave: run time, bosses with kills and wipes, every item the group rolled on and who won it (with the Need rolls for epic items), the party, and a group photo of the final boss. ForeverNotify knows the final boss of the Classic dungeons and of Forever's new ones (except Blackmaw Hold, not yet published). Where it doesn't, or gets it wrong, type `/fnotify end` after the last boss: the group photo countdown starts, the run is posted, and that boss is remembered so the next run there finishes by itself.
 
 **Before the first raid**: type `/fnotify probe` in a dungeon or raid (best after a boss fight with a loot roll) and share what it prints with your officers. It checks what the Forever client allows: encounter events, boss health, loot-roll chat lines, which boss is last, and hiding the UI for the photo.
 
